@@ -18,6 +18,9 @@ const io = new Server(server, {
 setupSocket(io);
 
 const PORT = process.env.PORT || 5000;
+app.get("/", (req, res) => {
+  res.send("API is running successfully");
+});
 
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
