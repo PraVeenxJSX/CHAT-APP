@@ -33,7 +33,7 @@ const Chat = () => {
 
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
   const [typingUser, setTypingUser] = useState<string | null>(null);
-  const [aiReplies, setAiReplies] = useState<string[]>([]);
+
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -55,7 +55,7 @@ const Chat = () => {
     if (!selectedUser || !token) return;
 
     setMessages([]);
-    setAiReplies([]);
+    
 
     api
       .get<Message[]>(`/api/messages/${selectedUser._id}`, {
@@ -132,7 +132,7 @@ const Chat = () => {
     getSocket()?.emit("stopTyping", { receiver: selectedUser._id });
 
     setNewMessage("");
-    setAiReplies([]);
+   
   };
 
   /* ------------------ UI ------------------ */
