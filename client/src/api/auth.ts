@@ -5,6 +5,7 @@ export interface AuthResponse {
   name: string;
   email: string;
   token: string;
+  avatar?: string;
 }
 
 export const loginUser = async (email: string, password: string) => {
@@ -24,6 +25,13 @@ export const registerUser = async (
     name,
     email,
     password,
+  });
+  return res.data;
+};
+
+export const googleLogin = async (credential: string) => {
+  const res = await api.post<AuthResponse>("/api/auth/google", {
+    credential,
   });
   return res.data;
 };

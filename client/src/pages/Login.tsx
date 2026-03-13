@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { loginUser } from "../api/auth";
+import { loginUser, googleLogin as googleLoginApi } from "../api/auth";
 import { useAuth } from "../context/AuthContext";
+import { GoogleLogin } from "@react-oauth/google";
 import AuthVideoBackground from "../components/AuthVideoBackground";
 import "../index.css";
 
@@ -22,6 +23,17 @@ const Login = () => {
       navigate("/chat");
     } catch {
       setError("Invalid credentials");
+    }
+  };
+
+  const handleGoogleSuccess = async (credentialResponse: any) => {
+    setError("");
+    try {
+      const data = await googleLoginApi(credentialResponse.credential);
+      login(data.token);
+      navigate("/chat");
+    } catch {
+      setError("Google login failed. Please try again.");
     }
   };
 
@@ -107,8 +119,28 @@ const Login = () => {
           Login
         </button>
 
+        {/* ── Google Sign-In Divider ── */}
+        <div className="flex items-center my-5">
+          <div className="flex-1 h-px bg-white/30"></div>
+          <span className="px-3 text-white/60 text-sm">or</span>
+          <div className="flex-1 h-px bg-white/30"></div>
+        </div>
+
+        {/* ── Google Sign-In Button ── */}
+        <div className="flex justify-center">
+          <GoogleLogin
+            onSuccess={handleGoogleSuccess}
+            onError={() => setError("Google login failed")}
+            theme="filled_black"
+            shape="pill"
+            size="large"
+            width="250"
+            text="signin_with"
+          />
+        </div>
+
         <p className="text-sm text-center mt-4 text-white/80">
-          Don’t have an account?{" "}
+          Don't have an account?{" "}
           <span
             className="text-blue-300 cursor-pointer hover:underline"
             onClick={() => navigate("/register")}
@@ -122,3 +154,4 @@ const Login = () => {
 };
 
 export default Login;
+

@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { registerUser } from "../api/auth";
+import { registerUser, googleLogin as googleLoginApi } from "../api/auth";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { GoogleLogin } from "@react-oauth/google";
 import AuthVideoBackground from "../components/AuthVideoBackground";
 
 const Register = () => {
@@ -23,6 +24,17 @@ const Register = () => {
       navigate("/chat");
     } catch {
       setError("Registration failed");
+    }
+  };
+
+  const handleGoogleSuccess = async (credentialResponse: any) => {
+    setError("");
+    try {
+      const data = await googleLoginApi(credentialResponse.credential);
+      login(data.token);
+      navigate("/chat");
+    } catch {
+      setError("Google sign-up failed. Please try again.");
     }
   };
 
@@ -123,6 +135,26 @@ const Register = () => {
           Register
         </button>
 
+        {/* ── Google Sign-In Divider ── */}
+        <div className="flex items-center my-5">
+          <div className="flex-1 h-px bg-white/30"></div>
+          <span className="px-3 text-white/60 text-sm">or</span>
+          <div className="flex-1 h-px bg-white/30"></div>
+        </div>
+
+        {/* ── Google Sign-In Button ── */}
+        <div className="flex justify-center">
+          <GoogleLogin
+            onSuccess={handleGoogleSuccess}
+            onError={() => setError("Google sign-up failed")}
+            theme="filled_black"
+            shape="pill"
+            size="large"
+            width="250"
+            text="signup_with"
+          />
+        </div>
+
         <p className="text-sm text-center mt-4 text-white/80">
           Already have an account?{" "}
           <span
@@ -138,3 +170,4 @@ const Register = () => {
 };
 
 export default Register;
+
