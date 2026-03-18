@@ -4,7 +4,6 @@ import { loginUser, googleLogin as googleLoginApi } from "../api/auth";
 import { useAuth } from "../context/AuthContext";
 import { GoogleLogin } from "@react-oauth/google";
 import AuthVideoBackground from "../components/AuthVideoBackground";
-import "../index.css";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -43,35 +42,36 @@ const Login = () => {
         onSubmit={handleSubmit}
         className="
           relative
-          bg-white/10
+          bg-cyber-surface/80
           backdrop-blur-xl
           p-8
           rounded-2xl
           w-80
           shadow-2xl
           border
-          border-white/20
+          border-cyber-border
           animate-[float_6s_ease-in-out_infinite]
           before:absolute
           before:inset-0
           before:rounded-2xl
           before:bg-gradient-to-r
-          before:from-blue-500/30
-          before:via-purple-500/30
-          before:to-pink-500/30
+          before:from-cyber-cyan/20
+          before:via-cyber-purple/20
+          before:to-cyber-magenta/20
           before:blur-xl
           before:-z-10
-          hover:shadow-[0_0_40px_rgba(139,92,246,0.6)]
-          transition
-          duration-300
+          hover:shadow-neon-cyan
+          transition-all
+          duration-500
         "
       >
-        <h2 className="text-2xl font-bold mb-6 text-center text-white">
-          Login
+        <h2 className="text-2xl font-bold mb-1 text-center text-cyber-cyan font-cyber tracking-wider neon-text-cyan">
+          NEONCHAT
         </h2>
+        <p className="text-cyber-text-dim text-sm text-center mb-6">Access your account</p>
 
         {error && (
-          <p className="text-red-400 text-sm mb-3 text-center">
+          <p className="text-cyber-magenta text-sm mb-3 text-center neon-text-magenta">
             {error}
           </p>
         )}
@@ -80,11 +80,12 @@ const Login = () => {
           type="email"
           placeholder="Email"
           className="
-            w-full mb-4 p-2 rounded
-            bg-white/20 text-white
-            placeholder-white/70
-            focus:outline-none
-            focus:ring-2 focus:ring-blue-400
+            w-full mb-4 p-3 rounded-lg
+            bg-cyber-bg border border-cyber-border
+            text-cyber-text placeholder-cyber-text-dim
+            focus:outline-none focus:border-cyber-cyan
+            focus:shadow-neon-cyan
+            transition-all duration-300
           "
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -95,11 +96,12 @@ const Login = () => {
           type="password"
           placeholder="Password"
           className="
-            w-full mb-5 p-2 rounded
-            bg-white/20 text-white
-            placeholder-white/70
-            focus:outline-none
-            focus:ring-2 focus:ring-purple-400
+            w-full mb-5 p-3 rounded-lg
+            bg-cyber-bg border border-cyber-border
+            text-cyber-text placeholder-cyber-text-dim
+            focus:outline-none focus:border-cyber-purple
+            focus:shadow-neon-purple
+            transition-all duration-300
           "
           value={password}
           onChange={(e) => setPassword(e.target.value)}
@@ -109,24 +111,25 @@ const Login = () => {
         <button
           type="submit"
           className="
-            w-full py-2 rounded
-            bg-gradient-to-r from-blue-500 to-purple-600
-            text-white font-semibold
-            hover:opacity-90
-            transition
+            w-full py-3 rounded-lg
+            bg-gradient-to-r from-cyber-cyan to-cyber-blue
+            text-cyber-bg font-bold font-cyber tracking-wider
+            hover:shadow-neon-cyan
+            active:scale-[0.98]
+            transition-all duration-300
           "
         >
-          Login
+          LOGIN
         </button>
 
-        {/* ── Google Sign-In Divider ── */}
+        {/* Divider */}
         <div className="flex items-center my-5">
-          <div className="flex-1 h-px bg-white/30"></div>
-          <span className="px-3 text-white/60 text-sm">or</span>
-          <div className="flex-1 h-px bg-white/30"></div>
+          <div className="flex-1 h-px bg-cyber-border"></div>
+          <span className="px-3 text-cyber-text-dim text-sm">or</span>
+          <div className="flex-1 h-px bg-cyber-border"></div>
         </div>
 
-        {/* ── Google Sign-In Button ── */}
+        {/* Google Sign-In */}
         <div className="flex justify-center">
           <GoogleLogin
             onSuccess={handleGoogleSuccess}
@@ -139,10 +142,10 @@ const Login = () => {
           />
         </div>
 
-        <p className="text-sm text-center mt-4 text-white/80">
+        <p className="text-sm text-center mt-4 text-cyber-text-dim">
           Don't have an account?{" "}
           <span
-            className="text-blue-300 cursor-pointer hover:underline"
+            className="text-cyber-cyan cursor-pointer hover:underline hover:text-cyber-magenta transition-colors"
             onClick={() => navigate("/register")}
           >
             Register
@@ -154,4 +157,3 @@ const Login = () => {
 };
 
 export default Login;
-

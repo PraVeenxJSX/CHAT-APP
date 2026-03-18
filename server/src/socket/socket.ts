@@ -1,5 +1,6 @@
 import { Server, Socket } from "socket.io";
 import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 import Message from "../models/Message";
 
 interface AuthSocket extends Socket {
@@ -8,7 +9,10 @@ interface AuthSocket extends Socket {
 
 interface SendMessagePayload {
   receiver: string;
-  content: string;
+  content?: string;
+  type?: "text" | "image" | "file" | "audio" | "sticker";
+  fileUrl?: string;
+  fileType?: string;
 }
 
 /* 🟢 Track online users */
@@ -66,12 +70,14 @@ export const setupSocket = (io: Server) => {
     /* ------------------ SEND MESSAGE ------------------ */
     socket.on(
       "sendMessage",
-      async ({ receiver, content }: SendMessagePayload) => {
-        // 💾 Save message
+      async ({ receiver, content, type = "text", fileUrl, fileType }: SendMessagePayload) => {
         const message = await Message.create({
           sender: userId,
           receiver,
           content,
+          type,
+          fileUrl,
+          fileType,
           status: "sent",
         });
 
@@ -84,25 +90,60 @@ export const setupSocket = (io: Server) => {
             _id: receiver,
           },
           content,
+          type,
+          fileUrl,
+          fileType,
           status: "delivered",
           createdAt: message.createdAt,
         };
 
-        // 📩 Send to receiver
         io.to(receiver).emit("receiveMessage", messagePayload);
 
-        // 📩 ALSO send to sender (🔥 THIS WAS MISSING)
         io.to(userId).emit("receiveMessage", {
           ...messagePayload,
           status: "sent",
         });
 
-        // ✔✔ Notify sender that message is delivered
         io.to(userId).emit("messageDelivered", {
           messageId: message._id,
         });
       }
     );
+
+    /* ------------------ REACTIONS ------------------ */
+    socket.on("addReaction", async ({ messageId, emoji }: { messageId: string; emoji: string }) => {
+      try {
+        const message = await Message.findById(messageId);
+        if (!message) return;
+
+        const existingIdx = message.reactions.findIndex(
+          (r) => r.userId.toString() === userId && r.emoji === emoji
+        );
+
+        if (existingIdx >= 0) {
+          message.reactions.splice(existingIdx, 1);
+        } else {
+          message.reactions.push({
+            userId: new mongoose.Types.ObjectId(userId),
+            emoji,
+          });
+        }
+
+        await message.save();
+
+        const reactionPayload = {
+          messageId,
+          reactions: message.reactions,
+        };
+
+        io.to(message.sender.toString()).emit("reactionUpdate", reactionPayload);
+        if (message.receiver) {
+          io.to(message.receiver.toString()).emit("reactionUpdate", reactionPayload);
+        }
+      } catch (err) {
+        console.error("Reaction error:", err);
+      }
+    });
 
     /* ------------------ MARK AS SEEN ------------------ */
     socket.on("markSeen", async ({ senderId }) => {

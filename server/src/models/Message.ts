@@ -3,7 +3,8 @@ import mongoose, { Document } from "mongoose";
 /* ------------------ INTERFACE ------------------ */
 export interface IMessage extends Document {
   sender: mongoose.Types.ObjectId;
-  receiver: mongoose.Types.ObjectId;
+  receiver?: mongoose.Types.ObjectId;
+  conversationId?: mongoose.Types.ObjectId;
 
   content?: string; // optional (files, audio, stickers)
 
@@ -13,6 +14,8 @@ export interface IMessage extends Document {
   type: "text" | "image" | "file" | "audio" | "sticker";
 
   status: "sent" | "delivered" | "read";
+
+  reactions: { userId: mongoose.Types.ObjectId; emoji: string }[];
 
   createdAt: Date;
   updatedAt: Date;
@@ -30,7 +33,11 @@ const messageSchema = new mongoose.Schema<IMessage>(
     receiver: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+    },
+
+    conversationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Conversation",
     },
 
     content: {
@@ -59,6 +66,13 @@ const messageSchema = new mongoose.Schema<IMessage>(
       enum: ["sent", "delivered", "read"],
       default: "sent",
     },
+
+    reactions: [
+      {
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        emoji: { type: String },
+      },
+    ],
   },
   {
     timestamps: true, // ✅ creates createdAt & updatedAt

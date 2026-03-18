@@ -7,6 +7,7 @@ export interface IUser extends Document {
   password?: string;
   googleId?: string;
   avatar?: string;
+  statusMessage?: string;
   matchPassword(password: string): Promise<boolean>;
 }
 
@@ -16,7 +17,8 @@ const userSchema = new mongoose.Schema<IUser>(
     email: { type: String, required: true, unique: true },
     password: { type: String },
     googleId: { type: String },
-    avatar: { type: String }
+    avatar: { type: String },
+    statusMessage: { type: String, default: "" }
   },
   { timestamps: true }
 );
