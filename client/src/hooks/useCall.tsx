@@ -57,13 +57,17 @@ export interface ActiveCall {
 interface CallContextValue {
   active: ActiveCall | null;
   incoming: CallInvitePayload | null;
-  startCall: (target: CallTarget, type: "audio" | "video", partner?: { _id: string; name: string; avatar?: string }, groupName?: string) => Promise<void>;
+  startCall: (
+    target: CallTarget,
+    type: "audio" | "video",
+    partner?: { _id: string; name: string; avatar?: string },
+    groupName?: string
+  ) => Promise<void>;
   acceptIncoming: () => void;
   rejectIncoming: (reason?: string) => void;
   toggleMic: () => void;
   toggleCam: () => void;
   hangup: () => void;
-  /* In-call helpers exposing local/remotes */
   media: {
     local: ReturnType<typeof useWebRTC>["local"];
     remotes: ReturnType<typeof useWebRTC>["remotes"];
@@ -72,7 +76,7 @@ interface CallContextValue {
 
 const CallContext = createContext<CallContextValue | null>(null);
 
-const TYPING_RING_TIMEOUT_MS = 45000; // drop invite after 45s with no answer
+const RING_TIMEOUT_MS = 45000;
 
 export const CallProviderInner = ({
   children,
@@ -93,15 +97,22 @@ export const CallProviderInner = ({
   const ringingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const peersListRef = useRef<ActiveCall["peers"]>([]);
   const activeRef = useRef<ActiveCall | null>(null);
+  const userRef = useRef<User | null>(null);
+  const webRTCRef = useRef<ReturnType<typeof useWebRTC> | null>(null);
 
   useEffect(() => {
     activeRef.current = active;
   }, [active]);
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
-  /* Get ICE */
+  /* Load ICE */
   useEffect(() => {
     if (!token) return;
-    loadIceServers(token).then(setIceServers).catch(() => setIceServers([]));
+    loadIceServers(token)
+      .then((servers) => setIceServers(servers || []))
+      .catch(() => setIceServers([]));
   }, [token]);
 
   /* Listen for incoming calls */
@@ -114,24 +125,51 @@ export const CallProviderInner = ({
     return unsub;
   }, [socket, user?._id]);
 
-  /* When call:accept arrives mark caller side as connected */
+  const endCallWith = useCallback(
+    (reason: "rejected" | "canceled" | "peer-hangup" | "timeout" | "media-failed" | "user-hangup") => {
+      const cur = activeRef.current;
+      if (!cur) return;
+      socket.callHangup({
+        callId: cur.callId,
+        ...(cur.target.kind === "group"
+          ? { conversationId: cur.target.conversationId }
+          : { to: cur.partner?._id ?? cur.target.kind === "direct" ? cur.target.partnerId : undefined }),
+      });
+      setActive((prev) => (prev ? { ...prev, status: "ended" } : prev));
+      setCallEndedFlag((c) => c + 1);
+      setTimeout(() => {
+        setActive(null);
+        setIncoming(null);
+      }, 1800);
+      void reason;
+    },
+    [socket]
+  );
+
+  /* call:accept — for caller: learn about the accepting peer, create polite peer */
   useEffect(() => {
     const unsub = socket.addCallAcceptedListener((data: CallAcceptedPayload) => {
       const cur = activeRef.current;
       if (!cur || data.callId !== cur.callId) return;
+      const partnerName = data.acceptedBy.name;
+      const partnerId = data.acceptedBy._id;
+
       peersListRef.current = [
-        ...peersListRef.current.filter((p) => p._id !== data.acceptedBy._id),
+        ...peersListRef.current.filter((p) => p._id !== partnerId),
         data.acceptedBy,
       ];
       setActive((prev) =>
         prev
           ? {
               ...prev,
-              peers: [...prev.peers.filter((p) => p._id !== data.acceptedBy._id), data.acceptedBy],
+              peers: [...prev.peers.filter((p) => p._id !== partnerId), data.acceptedBy],
               status: prev.status === "ringing-out" ? "connecting" : prev.status,
             }
           : prev
       );
+      // caller-side: create a polite peer (we're not initiating, callee is)
+      webRTCRef.current?.addPeer(partnerId, partnerName, false);
+      void partnerName;
     });
     return unsub;
   }, [socket]);
@@ -142,95 +180,66 @@ export const CallProviderInner = ({
       const cur = activeRef.current;
       if (!cur || data.callId !== cur.callId) return;
       if (cur.recipients && cur.recipients.length > 1) {
-        /* Group call: just remove this peer */
         peersListRef.current = peersListRef.current.filter((p) => p._id !== data.by);
         setActive((prev) =>
-          prev
-            ? { ...prev, peers: prev.peers.filter((p) => p._id !== data.by) }
-            : prev
+          prev ? { ...prev, peers: prev.peers.filter((p) => p._id !== data.by) } : prev
         );
       } else {
         endCallWith("rejected");
       }
     });
     return unsub;
-  }, [socket]);
+  }, [socket, endCallWith]);
 
-  /* call:cancel */
+  /* call:cancel — received by caller-side */
   useEffect(() => {
     const unsub = socket.addCallCanceledListener((data) => {
       const cur = activeRef.current;
       if (!cur || data.callId !== cur.callId) return;
-      if (cur.direction === "in") endCallWith("canceled");
+      endCallWith("canceled");
     });
     return unsub;
-  }, [socket]);
+  }, [socket, endCallWith]);
 
   /* call:hangup */
   useEffect(() => {
     const unsub = socket.addCallHangupListener((data: CallHangupPayload) => {
       const cur = activeRef.current;
       if (!cur || data.callId !== cur.callId) return;
-      if (data.by === user?._id) return;
+      if (data.by === userRef.current?._id) return;
       endCallWith("peer-hangup");
     });
     return unsub;
-  }, [socket, user?._id]);
+  }, [socket, endCallWith]);
 
-  const onOffer = useCallback(
-    (to: string, sdp: RTCSessionDescriptionInit) => {
-      if (!active) return;
-      socket.callOffer({ callId: active.callId, to, from: user!._id, sdp });
-    },
-    [socket, active, user?._id]
-  );
-
-  const onAnswer = useCallback(
-    (to: string, sdp: RTCSessionDescriptionInit) => {
-      if (!active) return;
-      socket.callAnswer({ callId: active.callId, to, from: user!._id, sdp });
-    },
-    [socket, active, user?._id]
-  );
-
-  const onIce = useCallback(
-    (to: string, candidate: RTCIceCandidateInit) => {
-      if (!active) return;
-      socket.callIce({ callId: active.callId, to, from: user!._id, candidate });
-    },
-    [socket, active, user?._id]
-  );
-
-  const webRTC = useWebRTC({
-    type: active?.type ?? "audio",
-    iceServers,
-    callEnded: callEndedFlag > 0 && !active,
-    onOffer,
-    onAnswer,
-    onIce,
-  });
-
-  /* Wire remote offer/answer/ice handlers */
+  /* SDP / ICE relay handlers — wired after webRTC is created below */
   useEffect(() => {
     if (!active) return;
     const unsubOffer = socket.addCallOfferListener(async (data: CallOfferPayload) => {
-      if (data.callId !== active.callId) return;
-      if (!peersListRef.current.some((p) => p._id === data.from)) {
-        peersListRef.current = [...peersListRef.current, { _id: data.from, name: "Peer", avatar: undefined }];
-      }
+      const cur = activeRef.current;
+      const wr = webRTCRef.current;
+      if (!cur || data.callId !== cur.callId || !wr) return;
       const peerEntry = peersListRef.current.find((p) => p._id === data.from);
-      await webRTC.handleRemoteOffer(data.from, peerEntry?.name || "Peer", data.sdp);
+      await wr.handleRemoteOffer(
+        data.from,
+        peerEntry?.name || cur.partner?.name || "Peer",
+        data.sdp
+      );
     });
     const unsubAnswer = socket.addCallAnswerListener(async (data: CallAnswerPayload) => {
-      if (data.callId !== active.callId) return;
-      await webRTC.handleRemoteAnswer(data.from, data.sdp);
+      const cur = activeRef.current;
+      const wr = webRTCRef.current;
+      if (!cur || data.callId !== cur.callId || !wr) return;
+      await wr.handleRemoteAnswer(data.from, data.sdp);
     });
     const unsubIce = socket.addCallIceListener(async (data: CallIcePayload) => {
-      if (data.callId !== active.callId) return;
-      await webRTC.handleRemoteIce(data.from, data.candidate);
+      const cur = activeRef.current;
+      const wr = webRTCRef.current;
+      if (!cur || data.callId !== cur.callId || !wr) return;
+      await wr.handleRemoteIce(data.from, data.candidate);
     });
     const unsubToggle = socket.addCallToggleListener((data: CallTogglePayload) => {
-      webRTC.updateRemoteState(data.from, {
+      webRTCRef.current?.updateRemoteState(data.from, {
         micEnabled: data.kind === "mic" ? data.enabled : undefined,
         camEnabled: data.kind === "cam" ? data.enabled : undefined,
       });
@@ -241,18 +250,54 @@ export const CallProviderInner = ({
       unsubIce();
       unsubToggle();
     };
-  }, [socket, active, webRTC]);
+  }, [socket, active]);
 
-  /* Detect call completion: when 1+ remote streams are flowing we say "in-call" */
+  /* Build a stable signaling object for current user */
+  const signaling = useMemo(
+    () => ({
+      sendOffer: (to: string, sdp: RTCSessionDescriptionInit) => {
+        const cur = activeRef.current;
+        const me = userRef.current;
+        if (!cur || !me?._id) return;
+        socket.callOffer({ callId: cur.callId, to, from: me._id, sdp });
+      },
+      sendAnswer: (to: string, sdp: RTCSessionDescriptionInit) => {
+        const cur = activeRef.current;
+        const me = userRef.current;
+        if (!cur || !me?._id) return;
+        socket.callAnswer({ callId: cur.callId, to, from: me._id, sdp });
+      },
+      sendIce: (to: string, candidate: RTCIceCandidateInit) => {
+        const cur = activeRef.current;
+        const me = userRef.current;
+        if (!cur || !me?._id) return;
+        socket.callIce({ callId: cur.callId, to, from: me._id, candidate });
+      },
+    }),
+    [socket]
+  );
+
+  const webRTC = useWebRTC({
+    type: active?.type ?? "audio",
+    iceServers,
+    callEnded: callEndedFlag > 0 && !active,
+    signaling,
+  });
+
+  useEffect(() => {
+    webRTCRef.current = webRTC;
+  }, [webRTC]);
+
+  /* Detect "in-call" once we have remote streams */
   useEffect(() => {
     if (!active) return;
-    if (active.status === "in-call") return;
+    if (active.status === "in-call" || active.status === "ended") return;
     if (webRTC.remotes.length > 0) {
       setActive((prev) => (prev ? { ...prev, status: "in-call" } : prev));
     }
   }, [webRTC.remotes.length, active]);
 
-  /* Start local media whenever a call becomes active */
+  /* Acquire local media on call start */
   useEffect(() => {
     if (!active) return;
     if (active.status === "ended") return;
@@ -264,7 +309,7 @@ export const CallProviderInner = ({
     if (active.status === "ringing-out") {
       ringingTimer.current = setTimeout(() => {
         endCallWith("timeout");
-      }, TYPING_RING_TIMEOUT_MS);
+      }, RING_TIMEOUT_MS);
     }
     return () => {
       if (ringingTimer.current) clearTimeout(ringingTimer.current);
@@ -272,34 +317,35 @@ export const CallProviderInner = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active?.callId, active?.status]);
 
-  const endCallWith = useCallback(
-    (reason: "rejected" | "canceled" | "peer-hangup" | "timeout" | "media-failed" | "user-hangup") => {
-      const cur = activeRef.current;
-      if (!cur) return;
-      /* Hangup to remote peers if any */
-      socket.callHangup({
-        callId: cur.callId,
-        ...(cur.target.kind === "group"
-          ? { conversationId: cur.target.conversationId }
-          : { to: cur.partner?._id ?? cur.target.kind === "direct" ? cur.target.partnerId : undefined }),
-      });
-      setActive((prev) => (prev ? { ...prev, status: "ended" } : prev));
-      setCallEndedFlag((c) => c + 1);
-      webRTC.stopAll();
-      /* Auto-clean after small UX delay so UI can show summary */
-      setTimeout(() => {
-        setActive(null);
-        setIncoming(null);
-      }, 1800);
-      void reason;
-    },
+  /* Acquire local media on call start */
+  useEffect(() => {
+    if (!active) return;
+    if (active.status === "ended") return;
+    webRTC.startLocalMedia().catch((err) => {
+      console.error("getUserMedia failed", err);
+      endCallWith("media-failed");
+    });
+    if (ringingTimer.current) clearTimeout(ringingTimer.current);
+    if (active.status === "ringing-out") {
+      ringingTimer.current = setTimeout(() => {
+        endCallWith("timeout");
+      }, RING_TIMEOUT_MS);
+    }
+    return () => {
+      if (ringingTimer.current) clearTimeout(ringingTimer.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [socket, webRTC]
-  );
+  }, [active?.callId, active?.status]);
 
   const startCall = useCallback(
-    async (target: CallTarget, type: "audio" | "video", partner?: { _id: string; name: string; avatar?: string }, groupName?: string) => {
-      if (!user?._id) return;
+    async (
+      target: CallTarget,
+      type: "audio" | "video",
+      partner?: { _id: string; name: string; avatar?: string },
+      groupName?: string
+    ) => {
+      const me = userRef.current;
+      if (!me?._id) return;
       const callId = `call-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
       const newActive: ActiveCall = {
         callId,
@@ -318,24 +364,26 @@ export const CallProviderInner = ({
         callId,
         type,
         target,
-        caller: { _id: user._id, name: user.name, avatar: user.avatar },
+        caller: { _id: me._id, name: me.name, avatar: me.avatar },
       });
-      /* Patch recipients we'll use later for cancel routing */
       setActive((prev) =>
         prev && prev.callId === callId ? { ...prev, recipients: result.recipients } : prev
       );
+      void me;
     },
-    [user?._id, user?.name, user?.avatar, socket]
+    [socket]
   );
 
   const acceptIncoming = useCallback(() => {
-    if (!incoming || !user?._id) return;
+    const me = userRef.current;
+    if (!incoming || !me?._id) return;
     const callId = incoming.callId;
     const fromUserId = incoming.fromUserId;
     const caller = incoming.caller;
     const target: CallTarget = incoming.conversationId
       ? { kind: "group", conversationId: incoming.conversationId }
       : { kind: "direct", partnerId: fromUserId };
+
     const newActive: ActiveCall = {
       callId,
       type: incoming.type,
@@ -345,17 +393,21 @@ export const CallProviderInner = ({
       startedAt: Date.now(),
       partner: { _id: caller._id, name: caller.name, avatar: caller.avatar },
       caller,
-      peers: caller._id !== user._id ? [caller] : [],
+      peers: caller._id !== me._id ? [caller] : [],
     };
     setActive(newActive);
-    peersListRef.current = caller._id !== user._id ? [caller] : [];
+    peersListRef.current = caller._id !== me._id ? [caller] : [];
+
+    /* Callee becomes impolite (initiates the offer). */
+    webRTCRef.current?.addPeer(caller._id, caller.name, true);
+
     setIncoming(null);
     socket.callAccept(callId, incoming.conversationId, {
-      _id: user._id,
-      name: user.name,
-      avatar: user.avatar,
+      _id: me._id,
+      name: me.name,
+      avatar: me.avatar,
     });
-  }, [incoming, user, socket]);
+  }, [incoming, socket]);
 
   const rejectIncoming = useCallback(
     (reason?: string) => {
@@ -367,73 +419,72 @@ export const CallProviderInner = ({
   );
 
   const toggleMic = useCallback(() => {
-    if (!active) return;
+    const cur = activeRef.current;
+    if (!cur) return;
     webRTC.toggleMic();
     const newEnabled = !webRTC.local.micEnabled;
-    if (active.target.kind === "group") {
+    if (cur.target.kind === "group") {
       socket.callToggle({
-        callId: active.callId,
+        callId: cur.callId,
         kind: "mic",
         enabled: newEnabled,
-        conversationId: active.target.conversationId,
+        conversationId: cur.target.conversationId,
       });
-    } else if (active.partner) {
+    } else if (cur.partner) {
       socket.callToggle({
-        callId: active.callId,
+        callId: cur.callId,
         kind: "mic",
         enabled: newEnabled,
-        to: active.partner._id,
+        to: cur.partner._id,
       });
     }
-  }, [active, webRTC, socket]);
+  }, [webRTC, socket]);
 
   const toggleCam = useCallback(() => {
-    if (!active) return;
+    const cur = activeRef.current;
+    if (!cur) return;
     webRTC.toggleCam();
     const newEnabled = !webRTC.local.camEnabled;
-    if (active.target.kind === "group") {
+    if (cur.target.kind === "group") {
       socket.callToggle({
-        callId: active.callId,
+        callId: cur.callId,
         kind: "cam",
         enabled: newEnabled,
-        conversationId: active.target.conversationId,
+        conversationId: cur.target.conversationId,
       });
-    } else if (active.partner) {
+    } else if (cur.partner) {
       socket.callToggle({
-        callId: active.callId,
+        callId: cur.callId,
         kind: "cam",
         enabled: newEnabled,
-        to: active.partner._id,
+        to: cur.partner._id,
       });
     }
-  }, [active, webRTC, socket]);
+  }, [webRTC, socket]);
 
   const hangup = useCallback(() => {
-    if (!active) return;
-    if (active.direction === "out" && active.status === "ringing-out") {
-      /* Cancel before connection */
-      const recipients = active.recipients || [];
+    const cur = activeRef.current;
+    if (!cur) return;
+    if (cur.direction === "out" && cur.status === "ringing-out") {
+      const recipients = cur.recipients || [];
       if (recipients.length) {
-        socket.callCancel(active.callId, recipients);
+        socket.callCancel(cur.callId, recipients);
       }
       setActive((prev) => (prev ? { ...prev, status: "ended" } : prev));
       setCallEndedFlag((c) => c + 1);
-      webRTC.stopAll();
       setTimeout(() => setActive(null), 1500);
       return;
     }
-    /* Connected or connecting -> hangup */
     socket.callHangup({
-      callId: active.callId,
-      ...(active.target.kind === "group"
-        ? { conversationId: active.target.conversationId }
-        : { to: active.partner?._id }),
+      callId: cur.callId,
+      ...(cur.target.kind === "group"
+        ? { conversationId: cur.target.conversationId }
+        : { to: cur.partner?._id }),
     });
     setActive((prev) => (prev ? { ...prev, status: "ended" } : prev));
     setCallEndedFlag((c) => c + 1);
-    webRTC.stopAll();
     setTimeout(() => setActive(null), 1500);
-  }, [active, socket, webRTC]);
+  }, [socket]);
 
   const value = useMemo<CallContextValue>(
     () => ({
@@ -447,7 +498,18 @@ export const CallProviderInner = ({
       hangup,
       media: { local: webRTC.local, remotes: webRTC.remotes },
     }),
-    [active, incoming, startCall, acceptIncoming, rejectIncoming, toggleMic, toggleCam, hangup, webRTC.local, webRTC.remotes]
+    [
+      active,
+      incoming,
+      startCall,
+      acceptIncoming,
+      rejectIncoming,
+      toggleMic,
+      toggleCam,
+      hangup,
+      webRTC.local,
+      webRTC.remotes,
+    ]
   );
 
   return <CallContext.Provider value={value}>{children}</CallContext.Provider>;

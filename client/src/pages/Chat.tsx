@@ -577,9 +577,9 @@ const Chat = () => {
             )}
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
             <button
-              className="hidden sm:grid h-9 w-9 place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30"
+              className="h-8 w-8 sm:h-9 sm:w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30"
               title="Voice call"
               disabled={!selectedConversation || !!activeCall}
               onClick={() => {
@@ -606,7 +606,7 @@ const Chat = () => {
               <Phone className="h-4 w-4" />
             </button>
             <button
-              className="hidden sm:grid h-9 w-9 place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30"
+              className="h-8 w-8 sm:h-9 sm:w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30"
               title="Video call"
               disabled={!selectedConversation || !!activeCall}
               onClick={() => {
@@ -634,7 +634,7 @@ const Chat = () => {
             </button>
             <button
               onClick={() => setShowSearch(true)}
-              className="h-9 w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition"
+              className="h-8 w-8 sm:h-9 sm:w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition"
               title="Search messages"
             >
               <Search className="h-4 w-4" />
@@ -645,7 +645,7 @@ const Chat = () => {
                   setShowGroupInfo(true);
                 }
               }}
-              className="h-9 w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30 disabled:cursor-not-allowed"
+              className="h-8 w-8 sm:h-9 sm:w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30 disabled:cursor-not-allowed"
               title="Group info"
               disabled={selectedConversation?.type !== "group"}
             >
@@ -653,7 +653,7 @@ const Chat = () => {
             </button>
             <button
               onClick={() => setShowSettings(true)}
-              className="h-9 w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition"
+              className="h-8 w-8 sm:h-9 sm:w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition"
               title="Settings"
             >
               <SettingsIcon className="h-4 w-4" />

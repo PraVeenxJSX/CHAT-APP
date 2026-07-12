@@ -152,7 +152,7 @@ const CallModal = () => {
 
           {/* Local video (PiP) */}
           {isVideo && media.local.stream && (
-            <div className="absolute bottom-4 right-4 h-28 w-40 md:h-36 md:w-52 rounded-2xl overflow-hidden border border-white/15 shadow-2xl bg-black/60">
+            <div className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 h-20 w-28 sm:h-28 sm:w-40 md:h-36 md:w-52 rounded-2xl overflow-hidden border border-white/15 shadow-2xl bg-black/60">
               <video
                 ref={localVideoRef}
                 autoPlay
@@ -171,9 +171,9 @@ const CallModal = () => {
       </div>
 
       {/* Footer / controls */}
-      <div className="px-6 py-6 border-t border-white/10 bg-black/40 backdrop-blur flex flex-col items-center gap-4">
-        <div className="text-center">
-          <div className="text-lg font-semibold text-white">
+      <div className="px-3 sm:px-6 py-4 sm:py-6 border-t border-white/10 bg-black/40 backdrop-blur flex flex-col items-center gap-3 sm:gap-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className="text-center px-2 max-w-full">
+          <div className="text-base sm:text-lg font-semibold text-white truncate max-w-[90vw]">
             {isEnded ? "Call ended" : callerName}
           </div>
           <div className="text-xs text-white/50">
@@ -185,7 +185,7 @@ const CallModal = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <ControlButton
             active={!media.local.micEnabled}
             onClick={toggleMic}

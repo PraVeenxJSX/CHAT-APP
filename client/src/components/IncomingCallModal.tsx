@@ -10,7 +10,7 @@ const IncomingCallModal = () => {
 
   return (
     <div className="fixed inset-0 z-[100] grid place-items-center bg-black/70 backdrop-blur-md animate-[fade-in_0.2s_ease-out]">
-      <div className="relative w-full max-w-sm rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.06] to-white/[0.02] backdrop-blur-2xl p-6 text-center shadow-2xl animate-[scale-in_0.18s_ease-out]">
+      <div className="relative w-[calc(100%-2rem)] max-w-sm rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.06] to-white/[0.02] backdrop-blur-2xl p-6 text-center shadow-2xl animate-[scale-in_0.18s_ease-out]">
         <div className="mx-auto h-24 w-24 grid place-items-center rounded-full ring-1 ring-white/10 overflow-hidden mb-4"
              style={{ background: "linear-gradient(135deg,#5865F2,#a855f7)" }}>
           {incoming.caller.avatar ? (
@@ -22,7 +22,7 @@ const IncomingCallModal = () => {
         <p className="text-[11px] uppercase tracking-widest text-white/40 mb-1">
           Incoming {isVideo ? "video" : "voice"} call
         </p>
-        <h3 className="text-xl font-semibold text-white">{incoming.caller.name}</h3>
+        <h3 className="text-xl font-semibold text-white truncate">{incoming.caller.name}</h3>
         {incoming.conversationId && (
           <p className="text-xs text-white/40 mt-1">Group call</p>
         )}

@@ -16,13 +16,11 @@ export interface LocalMediaState {
   camEnabled: boolean;
 }
 
-export interface UseCallArgs {
-  type: "audio" | "video";
-  iceServers: RTCIceServer[] | null;
-  callEnded: boolean;
-  onOffer: (to: string, sdp: RTCSessionDescriptionInit) => void;
-  onAnswer: (to: string, sdp: RTCSessionDescriptionInit) => void;
-  onIce: (to: string, candidate: RTCIceCandidateInit) => void;
+export interface PeerSignaling {
+  /* Send signaling to peer over the wire */
+  sendOffer: (to: string, sdp: RTCSessionDescriptionInit) => void;
+  sendAnswer: (to: string, sdp: RTCSessionDescriptionInit) => void;
+  sendIce: (to: string, candidate: RTCIceCandidateInit) => void;
 }
 
 interface PeerEntry {
@@ -32,17 +30,20 @@ interface PeerEntry {
   micEnabled: boolean;
   camEnabled: boolean;
   hasVideo: boolean;
+  /* When true, this side is the impolite peer (initiates offers). When false, polite. */
+  impolite: boolean;
+  /* True if we've begun the offer/answer exchange */
+  makingOffer: boolean;
+  ignoreOffer: boolean;
 }
 
-export function useWebRTC(args: UseCallArgs) {
-  const {
-    type,
-    iceServers,
-    callEnded,
-    onOffer,
-    onAnswer,
-    onIce,
-  } = args;
+export function useWebRTC(args: {
+  type: "audio" | "video";
+  iceServers: RTCIceServer[] | null;
+  callEnded: boolean;
+  signaling: PeerSignaling;
+}) {
+  const { type, iceServers, callEnded, signaling } = args;
 
   const [local, setLocal] = useState<LocalMediaState>({
     stream: null,
@@ -56,12 +57,14 @@ export function useWebRTC(args: UseCallArgs) {
 
   /* Acquire local media */
   const startLocalMedia = useCallback(async () => {
+    if (localStreamRef.current) return;
     try {
       const constraints: MediaStreamConstraints = {
         audio: true,
-        video: type === "video"
-          ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" }
-          : false,
+        video:
+          type === "video"
+            ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" }
+            : false,
       };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       localStreamRef.current = stream;
@@ -72,6 +75,96 @@ export function useWebRTC(args: UseCallArgs) {
     }
   }, [type]);
 
+  /* Broadcast remote entry to React state */
+  const upsertRemote = (peerId: string) => {
+    const entry = peersRef.current.get(peerId);
+    if (!entry) return;
+    setRemotes((prev) => {
+      const others = prev.filter((r) => r.userId !== peerId);
+      return [
+        ...others,
+        {
+          userId: peerId,
+          name: entry.name,
+          stream: entry.remoteStream,
+          hasVideo: entry.hasVideo,
+          micEnabled: entry.micEnabled,
+          camEnabled: entry.camEnabled,
+        },
+      ];
+    });
+  };
+
+  /* Create a peer connection. impolite=true means this side owns offer creation. */
+  const createPeer = useCallback(
+    (peerId: string, name: string, impolite: boolean) => {
+      if (!iceServers || !localStreamRef.current) return null;
+      // If peer already exists, respect existing impolite setting
+      const existing = peersRef.current.get(peerId);
+      if (existing) {
+        if (existing.name !== name) {
+          existing.name = name;
+          upsertRemote(peerId);
+        }
+        return existing.pc;
+      }
+      const pc = new RTCPeerConnection({ iceServers });
+      const remoteStream = new MediaStream();
+      const entry: PeerEntry = {
+        pc,
+        name,
+        remoteStream,
+        micEnabled: true,
+        camEnabled: type === "video",
+        hasVideo: false,
+        impolite,
+        makingOffer: false,
+        ignoreOffer: false,
+      };
+      peersRef.current.set(peerId, entry);
+
+      pc.ontrack = (ev) => {
+        ev.streams[0].getTracks().forEach((t) => remoteStream.addTrack(t));
+        ev.streams[0].getTracks().forEach((t) => {
+          if (t.kind === "video") entry.hasVideo = true;
+        });
+        upsertRemote(peerId);
+      };
+
+      pc.onicecandidate = (ev) => {
+        if (ev.candidate) {
+          signaling.sendIce(peerId, ev.candidate.toJSON());
+        }
+      };
+
+      /* Perfect-negotiation: only the impolite peer initiates offers.
+          The polite peer waits for the offer and responds via handleRemoteOffer. */
+      pc.onnegotiationneeded = async () => {
+        try {
+          if (!entry.impolite) return;
+          if (entry.ignoreOffer) return;
+          entry.makingOffer = true;
+          await pc.setLocalDescription(await pc.createOffer());
+          signaling.sendOffer(peerId, pc.localDescription as RTCSessionDescriptionInit);
+        } catch (err) {
+          console.error("onnegotiationneeded error", err);
+        } finally {
+          entry.makingOffer = false;
+        }
+      };
+
+      // Attach local media once
+      localStreamRef.current.getTracks().forEach((t) => {
+        pc.addTrack(t, localStreamRef.current as MediaStream);
+      });
+
+      upsertRemote(peerId);
+      return pc;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [iceServers, signaling, type]
+  );
+
   /* Stop everything */
   const stopAll = useCallback(() => {
     if (localStreamRef.current) {
@@ -79,7 +172,11 @@ export function useWebRTC(args: UseCallArgs) {
       localStreamRef.current = null;
     }
     peersRef.current.forEach((peer) => {
-      try { peer.pc.close(); } catch { /* noop */ }
+      try {
+        peer.pc.close();
+      } catch {
+        /* noop */
+      }
     });
     peersRef.current.clear();
     pendingIce.current.clear();
@@ -89,157 +186,109 @@ export function useWebRTC(args: UseCallArgs) {
 
   useEffect(() => {
     if (callEnded) stopAll();
-  }, [callEnded, stopAll]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [callEnded]);
 
-  /* Build a peer connection for `peerId`, with the local stream attached. */
-  const createPeer = useCallback(
-    (peerId: string, name: string, polite: boolean) => {
-      if (!iceServers || !localStreamRef.current) return null;
-      const pc = new RTCPeerConnection({ iceServers });
-      const remoteStream = new MediaStream();
-      let micEnabled = true;
-      let camEnabled = type === "video";
-      let hasVideo = false;
-
-      const upsert = () => {
-        const entry = peersRef.current.get(peerId);
-        if (!entry) return;
-        setRemotes((prev) => {
-          const others = prev.filter((r) => r.userId !== peerId);
-          return [
-            ...others,
-            {
-              userId: peerId,
-              name: entry.name,
-              stream: entry.remoteStream,
-              hasVideo: entry.hasVideo,
-              micEnabled: entry.micEnabled,
-              camEnabled: entry.camEnabled,
-            },
-          ];
-        });
-      };
-
-      pc.ontrack = (ev) => {
-        ev.streams[0].getTracks().forEach((t) => remoteStream.addTrack(t));
-        ev.streams[0].getTracks().forEach((t) => {
-          if (t.kind === "video") hasVideo = true;
-        });
-        peersRef.current.set(peerId, {
-          pc,
-          name,
-          remoteStream,
-          micEnabled,
-          camEnabled,
-          hasVideo,
-        });
-        upsert();
-      };
-
-      pc.onicecandidate = (ev) => {
-        if (ev.candidate) {
-          onIce(peerId, ev.candidate.toJSON());
-        }
-      };
-
-      localStreamRef.current.getTracks().forEach((t) => {
-        pc.addTrack(t, localStreamRef.current as MediaStream);
-      });
-
-      pc.onnegotiationneeded = async () => {
-        try {
-          if (!polite) {
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            onOffer(peerId, offer);
-          }
-        } catch (err) {
-          console.error("negotiation error", err);
-        }
-      };
-
-      peersRef.current.set(peerId, {
-        pc,
-        name,
-        remoteStream,
-        micEnabled,
-        camEnabled,
-        hasVideo,
-      });
-      return pc;
-    },
-    [iceServers, onIce, onOffer, type]
-  );
-
+  /* Receive offer from peer */
   const handleRemoteOffer = useCallback(
     async (from: string, name: string, sdp: RTCSessionDescriptionInit) => {
-      if (!iceServers) return;
+      if (!iceServers || !localStreamRef.current) return;
       let entry = peersRef.current.get(from);
-      let pc: RTCPeerConnection | null = entry?.pc ?? null;
-      if (!pc) {
-        const created = createPeer(from, name, true);
-        if (!created) return;
-        pc = created;
+      if (!entry) {
+        // We're receiving an offer — that means the *other* side is the impolite one,
+        // and we're polite (responding). impolite=false.
+        const pc = createPeer(from, name, false);
+        if (!pc) return;
+        const e2 = peersRef.current.get(from);
+        if (!e2) return;
+        entry = e2;
+      }
+      // After createPeer or fallback, `entry` is guaranteed set
+      const pc = (entry as PeerEntry).pc;
+      const offerCollision =
+        sdp.type === "offer" &&
+        (entry.makingOffer || pc.signalingState !== "stable");
+      // Perfect negotiation: ignore colliding offers if we are impolite
+      if (offerCollision) {
+        if (entry.impolite) {
+          entry.ignoreOffer = true;
+          try {
+            await pc.setLocalDescription({
+              type: "rollback",
+            } as RTCSessionDescriptionInit);
+          } catch {
+            /* noop */
+          }
+        } else {
+          // Polite: keep offer pending, return; we'll handle when free
+          return;
+        }
       }
       try {
+        entry.ignoreOffer = false;
         await pc.setRemoteDescription(new RTCSessionDescription(sdp));
         const queued = pendingIce.current.get(from) || [];
         for (const cand of queued) {
-          try { await pc.addIceCandidate(new RTCIceCandidate(cand)); } catch { /* noop */ }
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(cand));
+          } catch {
+            /* noop */
+          }
         }
         pendingIce.current.delete(from);
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        onAnswer(from, answer);
+        if (sdp.type === "offer") {
+          await pc.setLocalDescription(await pc.createAnswer());
+          signaling.sendAnswer(from, pc.localDescription as RTCSessionDescriptionInit);
+        }
+        upsertRemote(from);
       } catch (err) {
         console.error("handleRemoteOffer error", err);
       }
     },
-    [createPeer, iceServers, onAnswer]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [iceServers, signaling, createPeer]
   );
 
-  const handleRemoteAnswer = useCallback(
-    async (from: string, sdp: RTCSessionDescriptionInit) => {
-      const entry = peersRef.current.get(from);
-      if (!entry) return;
-      try {
-        await entry.pc.setRemoteDescription(new RTCSessionDescription(sdp));
-      } catch (err) {
-        console.error("setRemoteDescription error", err);
-      }
-    },
-    []
-  );
+  const handleRemoteAnswer = useCallback(async (from: string, sdp: RTCSessionDescriptionInit) => {
+    const entry = peersRef.current.get(from);
+    if (!entry) return;
+    try {
+      await entry.pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      entry.ignoreOffer = false;
+      upsertRemote(from);
+    } catch (err) {
+      console.error("handleRemoteAnswer error", err);
+    }
+  }, []);
 
-  const handleRemoteIce = useCallback(
-    async (from: string, candidate: RTCIceCandidateInit) => {
-      const entry = peersRef.current.get(from);
-      if (!entry) {
-        const list = pendingIce.current.get(from) || [];
-        list.push(candidate);
-        pendingIce.current.set(from, list);
-        return;
-      }
-      try {
-        await entry.pc.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (err) {
-        console.error("addIceCandidate error", err);
-      }
-    },
-    []
-  );
+  const handleRemoteIce = useCallback(async (from: string, candidate: RTCIceCandidateInit) => {
+    const entry = peersRef.current.get(from);
+    if (!entry) {
+      const list = pendingIce.current.get(from) || [];
+      list.push(candidate);
+      pendingIce.current.set(from, list);
+      return;
+    }
+    try {
+      await entry.pc.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (err) {
+      console.error("addIceCandidate error", err);
+    }
+  }, []);
 
-  /* Add a peer (called when a new participant joins a group call or when an offer arrives in 1:1) */
+  /* Manually register a peer: caller-side, called when call:accept arrives */
   const addPeer = useCallback(
-    (peerId: string, name: string, polite: boolean) => {
-      if (peersRef.current.has(peerId)) return peersRef.current.get(peerId)!;
-      return createPeer(peerId, name, polite);
+    (peerId: string, name: string, impolite: boolean) => {
+      return createPeer(peerId, name, impolite);
     },
     [createPeer]
   );
 
   const updateRemoteState = useCallback(
-    (from: string, partial: Partial<Pick<RemoteStreamInfo, "micEnabled" | "camEnabled">>) => {
+    (
+      from: string,
+      partial: Partial<Pick<RemoteStreamInfo, "micEnabled" | "camEnabled">>
+    ) => {
       const entry = peersRef.current.get(from);
       if (!entry) return;
       if (partial.micEnabled !== undefined) entry.micEnabled = partial.micEnabled;
@@ -279,6 +328,7 @@ export function useWebRTC(args: UseCallArgs) {
       navigator.mediaDevices
         .getUserMedia({ video: true })
         .then((s) => {
+          if (!localStreamRef.current) return;
           localStreamRef.current = s;
           peersRef.current.forEach((peer) => {
             s.getTracks().forEach((t) =>
@@ -287,7 +337,9 @@ export function useWebRTC(args: UseCallArgs) {
           });
           setLocal({ stream: s, micEnabled: local.micEnabled, camEnabled: true });
         })
-        .catch(() => {/* noop */});
+        .catch(() => {
+          /* noop */
+        });
       return;
     }
     const next = !local.camEnabled;
@@ -308,14 +360,6 @@ export function useWebRTC(args: UseCallArgs) {
     toggleCam,
     updateRemoteState,
   };
-}
-
-export function useCallId() {
-  const ref = useRef<string>("");
-  if (!ref.current) {
-    ref.current = `call-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
-  }
-  return ref.current;
 }
 
 export async function loadIceServers(token: string): Promise<RTCIceServer[]> {

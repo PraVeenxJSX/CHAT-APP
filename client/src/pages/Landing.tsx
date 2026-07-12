@@ -630,7 +630,7 @@ function Hero() {
     <section
       ref={ref}
       onPointerDown={handleHeroPress}
-      className="relative flex min-h-[100vh] cursor-crosshair items-center justify-center overflow-hidden pt-24"
+      className="relative flex min-h-[100svh] cursor-crosshair items-center justify-center overflow-hidden pt-24"
     >
       {/* 3D canvas — pointer-events auto so orbs can be hovered & clicked */}
       <div className="absolute inset-0 z-0 opacity-90">
@@ -1582,7 +1582,10 @@ export default function Landing() {
   const [loaded, setLoaded] = useState(false);
 
   // Smooth scroll (Lenis) + intro loader
+  // On touch / mobile we leave native scrolling to avoid input conflicts.
   useEffect(() => {
+    const isCoarse = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
+    if (isCoarse) return;
     const lenis = new Lenis({
       duration: 1.15,
       easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
@@ -1603,10 +1606,11 @@ export default function Landing() {
 
   return (
     <main
-      className="relative min-h-screen overflow-x-hidden bg-[#06060a] text-white antialiased"
+      className="relative min-h-[100svh] overflow-x-hidden overflow-y-auto bg-[#06060a] text-white antialiased"
       style={{
         fontFamily:
           '"Inter", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        WebkitOverflowScrolling: "touch",
       }}
     >
       <IntroLoader done={loaded} />
