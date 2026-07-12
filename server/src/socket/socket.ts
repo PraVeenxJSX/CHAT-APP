@@ -2,17 +2,24 @@ import { Server, Socket } from "socket.io";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import Message from "../models/Message";
+import Conversation from "../models/Conversation";
 
 interface AuthSocket extends Socket {
   userId?: string;
 }
 
 interface SendMessagePayload {
-  receiver: string;
+  receiver?: string;
+  conversationId?: string;
   content?: string;
   type?: "text" | "image" | "file" | "audio" | "sticker";
   fileUrl?: string;
   fileType?: string;
+}
+
+interface TypingPayload {
+  receiver?: string;
+  conversationId?: string;
 }
 
 /* 🟢 Track online users */
@@ -59,54 +66,134 @@ export const setupSocket = (io: Server) => {
 
 
     /* ------------------ TYPING INDICATOR ------------------ */
-    socket.on("typing", ({ receiver }) => {
-      io.to(receiver).emit("typing", { sender: userId });
+    socket.on("typing", async ({ receiver, conversationId }: TypingPayload) => {
+      if (conversationId) {
+        // For group conversations, emit to all participants except sender
+        const conversation = await Conversation.findById(conversationId).populate("participants");
+        if (conversation) {
+          conversation.participants.forEach((p: any) => {
+            if (p._id.toString() !== userId) {
+              io.to(p._id.toString()).emit("typing", { sender: userId, conversationId });
+            }
+          });
+        }
+      } else if (receiver) {
+        // Direct message typing
+        io.to(receiver).emit("typing", { sender: userId });
+      }
     });
 
-    socket.on("stopTyping", ({ receiver }) => {
-      io.to(receiver).emit("stopTyping", { sender: userId });
+    socket.on("stopTyping", async ({ receiver, conversationId }: TypingPayload) => {
+      if (conversationId) {
+        // For group conversations, emit to all participants except sender
+        const conversation = await Conversation.findById(conversationId).populate("participants");
+        if (conversation) {
+          conversation.participants.forEach((p: any) => {
+            if (p._id.toString() !== userId) {
+              io.to(p._id.toString()).emit("stopTyping", { sender: userId, conversationId });
+            }
+          });
+        }
+      } else if (receiver) {
+        // Direct message stop typing
+        io.to(receiver).emit("stopTyping", { sender: userId });
+      }
     });
 
     /* ------------------ SEND MESSAGE ------------------ */
     socket.on(
       "sendMessage",
-      async ({ receiver, content, type = "text", fileUrl, fileType }: SendMessagePayload) => {
-        const message = await Message.create({
-          sender: userId,
-          receiver,
-          content,
-          type,
-          fileUrl,
-          fileType,
-          status: "sent",
-        });
+      async ({ receiver, conversationId, content, type = "text", fileUrl, fileType }: SendMessagePayload) => {
+        let message;
+        
+        if (conversationId) {
+          // Group message
+          const conversation = await Conversation.findById(conversationId).populate("participants");
+          if (!conversation) return;
 
-        const messagePayload = {
-          _id: message._id,
-          sender: {
-            _id: userId,
-          },
-          receiver: {
-            _id: receiver,
-          },
-          content,
-          type,
-          fileUrl,
-          fileType,
-          status: "delivered",
-          createdAt: message.createdAt,
-        };
+          message = await Message.create({
+            sender: userId,
+            conversationId,
+            content,
+            type,
+            fileUrl,
+            fileType,
+            status: "sent",
+          });
 
-        io.to(receiver).emit("receiveMessage", messagePayload);
+          // Update conversation's lastMessage
+          conversation.lastMessage = message._id;
+          await conversation.save();
 
-        io.to(userId).emit("receiveMessage", {
-          ...messagePayload,
-          status: "sent",
-        });
+          // Emit to all participants except sender
+          const messagePayload = {
+            _id: message._id,
+            sender: {
+              _id: userId,
+            },
+            conversationId,
+            content,
+            type,
+            fileUrl,
+            fileType,
+            status: "delivered",
+            createdAt: message.createdAt,
+          };
 
-        io.to(userId).emit("messageDelivered", {
-          messageId: message._id,
-        });
+          conversation.participants.forEach((p: any) => {
+            if (p._id.toString() !== userId) {
+              io.to(p._id.toString()).emit("receiveMessage", messagePayload);
+            }
+          });
+
+          // Also send to sender with "sent" status
+          io.to(userId).emit("receiveMessage", {
+            ...messagePayload,
+            status: "sent",
+          });
+
+          io.to(userId).emit("messageDelivered", {
+            messageId: message._id,
+          });
+        } else if (receiver) {
+          // Direct message
+          message = await Message.create({
+            sender: userId,
+            receiver,
+            content,
+            type,
+            fileUrl,
+            fileType,
+            status: "sent",
+          });
+
+          const messagePayload = {
+            _id: message._id,
+            sender: {
+              _id: userId,
+            },
+            receiver: {
+              _id: receiver,
+            },
+            content,
+            type,
+            fileUrl,
+            fileType,
+            status: "delivered",
+            createdAt: message.createdAt,
+          };
+
+          io.to(receiver).emit("receiveMessage", messagePayload);
+
+          io.to(userId).emit("receiveMessage", {
+            ...messagePayload,
+            status: "sent",
+          });
+
+          io.to(userId).emit("messageDelivered", {
+            messageId: message._id,
+          });
+        }
       }
     );
 
@@ -139,6 +226,17 @@ export const setupSocket = (io: Server) => {
         io.to(message.sender.toString()).emit("reactionUpdate", reactionPayload);
         if (message.receiver) {
           io.to(message.receiver.toString()).emit("reactionUpdate", reactionPayload);
+        }
+        // Also handle conversationId for group messages
+        if (message.conversationId) {
+          const conversation = await Conversation.findById(message.conversationId).populate("participants");
+          if (conversation) {
+            conversation.participants.forEach((p: any) => {
+              if (p._id.toString() !== userId) {
+                io.to(p._id.toString()).emit("reactionUpdate", reactionPayload);
+              }
+            });
+          }
         }
       } catch (err) {
         console.error("Reaction error:", err);

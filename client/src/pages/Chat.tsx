@@ -1,16 +1,27 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useSocket } from "../context/SocketContext";
 import { useChatMessages } from "../hooks/useChatMessages";
 import { useNotifications } from "../hooks/useNotifications";
 import { useUnreadCounts } from "../hooks/useUnreadCounts";
 import { fetchUsers } from "../api/message";
+import {
+  fetchConversations,
+  getOrCreateDirectConversation,
+  createGroupConversation,
+  updateGroupConversation,
+  leaveGroup,
+} from "../api/conversation";
 import ChatList from "../components/ChatList";
 import MessageList from "../components/MessageList";
 import MessageInput from "../components/MessageInput";
 import AISuggestions from "../components/AISuggestions";
 import SearchPanel from "../components/SearchPanel";
-import type { User, SendMessagePayload, Message } from "../types";
+import CreateGroupDialog from "../components/CreateGroupDialog";
+import GroupInfoPanel from "../components/GroupInfoPanel";
+import { Menu, Search, MoreVertical, Phone, Video, MessageSquare, Users } from "lucide-react";
+import api from "../api/axios";
+import type { User, SendMessagePayload, Message, Conversation } from "../types";
 
 const Chat = () => {
   const { logout, token, user } = useAuth();
@@ -20,87 +31,326 @@ const Chat = () => {
   const { incrementUnread, clearUnread, getUnreadCount } = useUnreadCounts();
 
   const [users, setUsers] = useState<User[]>([]);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [newMessage, setNewMessage] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [showGroupInfo, setShowGroupInfo] = useState(false);
+  const [username, setUsername] = useState("");
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [dob, setDob] = useState("");
+  const [showOnlineStatus, setShowOnlineStatus] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const { messages, loading, setMessages } = useChatMessages(selectedUser);
+  const { messages, loading, setMessages } = useChatMessages(selectedConversation);
+
+  // Derived: get the "partner" user for a direct conversation
+  const selectedPartner = useMemo(() => {
+    if (!selectedConversation || selectedConversation.type !== "direct" || !user) return null;
+    return selectedConversation.participants.find((p) => p._id !== user._id) || null;
+  }, [selectedConversation, user]);
+
+  // Lock page scroll
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevBodyHeight = document.body.style.height;
+    const prevHtmlHeight = document.documentElement.style.height;
+
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.height = "100%";
+    document.body.style.height = "100%";
+
+    return () => {
+      document.documentElement.style.overflow = prevHtmlOverflow;
+      document.body.style.overflow = prevBodyOverflow;
+      document.documentElement.style.height = prevHtmlHeight;
+      document.body.style.height = prevBodyHeight;
+    };
+  }, []);
 
   // Request notification permission on mount
   useEffect(() => {
     requestPermission();
   }, [requestPermission]);
 
+  // Fetch users and conversations
   useEffect(() => {
     if (!token) return;
     fetchUsers(token).then(setUsers);
+    fetchConversations(token).then(setConversations);
   }, [token]);
 
-  // Listen for incoming messages for notifications
+  // Initialize username based on logged-in user
+  useEffect(() => {
+    if (user) setUsername(user.name);
+  }, [user]);
+
+  // Listen for incoming messages for notifications + unread counts
   useEffect(() => {
     const unsub = addMessageListener((msg: Message) => {
-      // If message is from someone other than selected user, increment unread
-      if (msg.sender._id !== user?._id && msg.sender._id !== selectedUser?._id) {
-        incrementUnread(msg.sender._id);
+      if (!user) return;
+      if (msg.sender._id === user._id) return;
+
+      // Check if this message belongs to the currently selected conversation
+      const isCurrentConversation =
+        selectedConversation &&
+        (msg.conversationId === selectedConversation._id ||
+          (selectedConversation.type === "direct" &&
+            msg.sender._id === selectedConversation.participants.find((p) => p._id !== user._id)?._id));
+
+      if (!isCurrentConversation) {
+        // Increment unread for the conversation or sender
+        const unreadKey = msg.conversationId || msg.sender._id;
+        incrementUnread(unreadKey);
         const senderName = users.find((u) => u._id === msg.sender._id)?.name || "Someone";
-        showNotification(
-          senderName,
-          msg.content || "[Media message]"
-        );
+        showNotification(senderName, msg.content || "[Media message]");
       }
     });
     return unsub;
-  }, [addMessageListener, user, selectedUser, incrementUnread, showNotification, users]);
+  }, [addMessageListener, user, selectedConversation, incrementUnread, showNotification, users]);
 
-  const handleSelectUser = useCallback((u: User) => {
-    setSelectedUser(u);
-    setSidebarOpen(false);
-    clearUnread(u._id);
-  }, [clearUnread]);
+  // Refresh conversations when conversations might have changed
+  const refreshConversations = useCallback(async () => {
+    if (!token) return;
+    const convs = await fetchConversations(token);
+    setConversations(convs);
+  }, [token]);
 
+  // Handle selecting a conversation
+  const handleSelectConversation = useCallback(
+    (conv: Conversation) => {
+      setSelectedConversation(conv);
+      setSidebarOpen(false);
+      setShowGroupInfo(false);
+      clearUnread(conv._id);
+    },
+    [clearUnread]
+  );
+
+  // Handle selecting a user (for new direct chats)
+  const handleSelectUser = useCallback(
+    async (u: User) => {
+      if (!token) return;
+      try {
+        const conv = await getOrCreateDirectConversation(u._id, token);
+        setSelectedConversation(conv);
+        setSidebarOpen(false);
+        // Add to conversations list if not already there
+        setConversations((prev) => {
+          if (prev.some((c) => c._id === conv._id)) return prev;
+          return [conv, ...prev];
+        });
+      } catch (err) {
+        console.error("Failed to create direct conversation", err);
+      }
+    },
+    [token]
+  );
+
+  // Handle creating a group
+  const handleCreateGroup = useCallback(
+    async (name: string, participantIds: string[]) => {
+      if (!token) return;
+      try {
+        const conv = await createGroupConversation(name, participantIds, token);
+        setShowCreateGroup(false);
+        setConversations((prev) => [conv, ...prev]);
+        setSelectedConversation(conv);
+      } catch (err) {
+        console.error("Failed to create group", err);
+      }
+    },
+    [token]
+  );
+
+  // Handle sending a message
   const handleSend = useCallback(() => {
-    if (!newMessage.trim() || !selectedUser) return;
+    if (!newMessage.trim() || !selectedConversation) return;
 
-    sendMessage({
-      receiver: selectedUser._id,
-      content: newMessage,
-      type: "text",
-    });
-
-    if (selectedUser) {
-      emitStopTyping(selectedUser._id);
+    if (selectedConversation.type === "group") {
+      sendMessage({
+        conversationId: selectedConversation._id,
+        content: newMessage,
+        type: "text",
+      });
+    } else if (selectedPartner) {
+      sendMessage({
+        receiver: selectedPartner._id,
+        content: newMessage,
+        type: "text",
+      });
+      emitStopTyping(selectedPartner._id);
     }
 
     setNewMessage("");
-  }, [newMessage, selectedUser, sendMessage, emitStopTyping]);
+  }, [newMessage, selectedConversation, selectedPartner, sendMessage, emitStopTyping]);
 
   const handleSendMedia = useCallback(
     (payload: Omit<SendMessagePayload, "receiver">) => {
-      if (!selectedUser) return;
-      sendMessage({
-        receiver: selectedUser._id,
-        ...payload,
-      });
+      if (!selectedConversation) return;
+
+      if (selectedConversation.type === "group") {
+        sendMessage({
+          conversationId: selectedConversation._id,
+          ...payload,
+        });
+      } else if (selectedPartner) {
+        sendMessage({
+          receiver: selectedPartner._id,
+          ...payload,
+        });
+      }
     },
-    [selectedUser, sendMessage]
+    [selectedConversation, selectedPartner, sendMessage]
   );
 
   const handleTyping = useCallback(() => {
-    if (selectedUser) emitTyping(selectedUser._id);
-  }, [selectedUser, emitTyping]);
+    if (selectedConversation?.type === "group") {
+      // For groups, we could emit typing with conversationId
+      // but the current socket handles it
+    } else if (selectedPartner) {
+      emitTyping(selectedPartner._id);
+    }
+  }, [selectedConversation, selectedPartner, emitTyping]);
 
   const handleStopTyping = useCallback(() => {
-    if (selectedUser) emitStopTyping(selectedUser._id);
-  }, [selectedUser, emitStopTyping]);
+    if (selectedPartner) emitStopTyping(selectedPartner._id);
+  }, [selectedPartner, emitStopTyping]);
+
+  const handleSaveSettings = async () => {
+    if (!token) return;
+    setSaving(true);
+    try {
+      const formData = new FormData();
+      formData.append("name", username.trim());
+      if (dob) formData.append("dob", dob);
+      formData.append("statusMessage", showOnlineStatus ? "online" : "offline");
+      await api.put("/api/users/profile", formData, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setShowSettings(false);
+    } catch (err) {
+      console.error("Failed to update profile", err);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleAISuggestion = useCallback((text: string) => {
     setNewMessage(text);
   }, []);
 
-  const typingUser =
-    selectedUser && typingUsers[selectedUser._id] ? selectedUser._id : null;
+  // Handle group operations
+  const handleUpdateGroup = useCallback(
+    async (name: string) => {
+      if (!token || !selectedConversation) return;
+      try {
+        const updated = await updateGroupConversation(
+          selectedConversation._id,
+          { name },
+          token
+        );
+        setSelectedConversation(updated);
+        refreshConversations();
+      } catch (err) {
+        console.error("Failed to update group", err);
+      }
+    },
+    [token, selectedConversation, refreshConversations]
+  );
+
+  const handleAddParticipants = useCallback(
+    async (userIds: string[]) => {
+      if (!token || !selectedConversation) return;
+      try {
+        const updated = await updateGroupConversation(
+          selectedConversation._id,
+          { addParticipants: userIds },
+          token
+        );
+        setSelectedConversation(updated);
+        refreshConversations();
+      } catch (err) {
+        console.error("Failed to add participants", err);
+      }
+    },
+    [token, selectedConversation, refreshConversations]
+  );
+
+  const handleRemoveParticipant = useCallback(
+    async (userId: string) => {
+      if (!token || !selectedConversation) return;
+      try {
+        const updated = await updateGroupConversation(
+          selectedConversation._id,
+          { removeParticipants: [userId] },
+          token
+        );
+        setSelectedConversation(updated);
+        refreshConversations();
+      } catch (err) {
+        console.error("Failed to remove participant", err);
+      }
+    },
+    [token, selectedConversation, refreshConversations]
+  );
+
+  const handleLeaveGroup = useCallback(async () => {
+    if (!token || !selectedConversation) return;
+    try {
+      await leaveGroup(selectedConversation._id, token);
+      setSelectedConversation(null);
+      setShowGroupInfo(false);
+      refreshConversations();
+    } catch (err) {
+      console.error("Failed to leave group", err);
+    }
+  }, [token, selectedConversation, refreshConversations]);
+
+  // Determine typing state for current conversation
+  const typingUser = useMemo(() => {
+    if (!selectedConversation) return null;
+    if (selectedConversation.type === "direct" && selectedPartner) {
+      return typingUsers[selectedPartner._id] ? selectedPartner._id : null;
+    }
+    return null;
+  }, [selectedConversation, selectedPartner, typingUsers]);
+
+  // Header display name and status
+  const headerInfo = useMemo(() => {
+    if (!selectedConversation) return null;
+    if (selectedConversation.type === "group") {
+      return {
+        name: selectedConversation.name || "Group",
+        status: `${selectedConversation.participants.length} members`,
+        isOnline: false,
+        isGroup: true,
+      };
+    }
+    if (selectedPartner) {
+      const isOnline = onlineUsers.includes(selectedPartner._id);
+      return {
+        name: selectedPartner.name,
+        status: typingUsers[selectedPartner._id]
+          ? "typing…"
+          : isOnline
+          ? "Active now"
+          : "Offline",
+        isOnline,
+        isTyping: !!typingUsers[selectedPartner._id],
+        isGroup: false,
+      };
+    }
+    return null;
+  }, [selectedConversation, selectedPartner, onlineUsers, typingUsers]);
 
   // Get last received message for AI suggestions
   const lastReceivedMessage = useMemo(() => {
@@ -109,168 +359,242 @@ const Chat = () => {
     return received[received.length - 1] || null;
   }, [messages, user]);
 
+  // Other users for group creation (exclude self)
+  const otherUsers = useMemo(() => {
+    if (!user) return users;
+    return users.filter((u) => u._id !== user._id);
+  }, [users, user]);
+
   return (
-    <div className="h-screen flex bg-cyber-bg cyber-grid-bg text-cyber-text relative overflow-hidden">
-      {/* Scanline overlay */}
-      <div className="absolute inset-0 cyber-scanline pointer-events-none z-40" />
+    <div className="h-dvh w-screen max-w-full flex bg-[#07080c] text-white relative overflow-hidden">
+      {/* Ambient aurora */}
+      <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+        <div
+          className="absolute -top-56 -left-40 h-[560px] w-[560px] rounded-full blur-3xl opacity-30 animate-[pulse_9s_ease-in-out_infinite]"
+          style={{ background: "radial-gradient(circle at center, #5865F2 0%, transparent 60%)" }}
+        />
+        <div
+          className="absolute top-1/3 -right-40 h-[640px] w-[640px] rounded-full blur-3xl opacity-25 animate-[pulse_11s_ease-in-out_infinite]"
+          style={{ background: "radial-gradient(circle at center, #a855f7 0%, transparent 60%)" }}
+        />
+        <div
+          className="absolute -bottom-60 left-1/3 h-[520px] w-[520px] rounded-full blur-3xl opacity-20"
+          style={{ background: "radial-gradient(circle at center, #06b6d4 0%, transparent 60%)" }}
+        />
+        <div
+          className="absolute inset-0 opacity-[0.035] mix-blend-overlay"
+          style={{
+            backgroundImage: "radial-gradient(rgba(255,255,255,0.9) 1px, transparent 1px)",
+            backgroundSize: "22px 22px",
+          }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/60" />
+      </div>
 
       {/* Search panel */}
       {showSearch && <SearchPanel onClose={() => setShowSearch(false)} />}
 
+      {/* Create group dialog */}
+      {showCreateGroup && (
+        <CreateGroupDialog
+          users={otherUsers}
+          onClose={() => setShowCreateGroup(false)}
+          onCreate={handleCreateGroup}
+        />
+      )}
+
+      {/* Group info panel */}
+      {showGroupInfo && selectedConversation?.type === "group" && user && (
+        <GroupInfoPanel
+          conversation={selectedConversation}
+          currentUserId={user._id}
+          allUsers={users}
+          onClose={() => setShowGroupInfo(false)}
+          onUpdate={handleUpdateGroup}
+          onAddParticipants={handleAddParticipants}
+          onRemoveParticipant={handleRemoveParticipant}
+          onLeave={handleLeaveGroup}
+        />
+      )}
+
       {/* Hamburger button - mobile only */}
       <button
         onClick={() => setSidebarOpen(true)}
-        className="absolute top-4 left-4 z-30 p-2.5 bg-cyber-surface border border-cyber-border rounded-lg md:hidden hover:border-cyber-cyan hover:shadow-neon-cyan transition-all duration-300"
+        className="absolute top-4 left-4 z-30 h-9 w-9 grid place-items-center rounded-xl bg-white/[0.06] border border-white/10 backdrop-blur md:hidden hover:bg-white/[0.1] transition"
+        aria-label="Open sidebar"
       >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          className="h-5 w-5 text-cyber-cyan"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M4 6h16M4 12h16M4 18h16"
-          />
-        </svg>
+        <Menu className="h-4 w-4 text-white/80" />
       </button>
 
       {/* Backdrop - mobile only */}
       {sidebarOpen && (
         <div
           onClick={() => setSidebarOpen(false)}
-          className="fixed inset-0 bg-black/70 z-20 md:hidden animate-[fade-in_0.2s_ease-out]"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-20 md:hidden animate-[fade-in_0.2s_ease-out]"
         />
       )}
 
       {/* Sidebar */}
       <div
-        className={`fixed z-30 top-0 left-0 h-full w-72 transition-transform duration-300 ease-out md:relative md:translate-x-0 md:w-80 md:border-r md:border-cyber-border ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        className={`fixed z-30 top-0 left-0 h-full w-72 transition-transform duration-300 ease-out md:relative md:translate-x-0 md:w-80 md:h-auto ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         }`}
       >
         <ChatList
           users={users}
-          selectedUser={selectedUser}
+          conversations={conversations}
+          selectedConversation={selectedConversation}
           onSelectUser={handleSelectUser}
+          onSelectConversation={handleSelectConversation}
           onlineUsers={onlineUsers}
           onLogout={logout}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
-          unreadCounts={Object.fromEntries(users.map((u) => [u._id, getUnreadCount(u._id)]))}
+          unreadCounts={Object.fromEntries(
+            conversations.map((c) => [c._id, getUnreadCount(c._id)])
+          )}
+          onCreateGroup={() => setShowCreateGroup(true)}
         />
       </div>
 
       {/* Chat area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 h-full overflow-hidden relative z-[1]">
         {/* Header */}
-        <div className="p-4 bg-cyber-surface/80 backdrop-blur-sm border-b border-cyber-border flex items-center gap-3">
-          <div className="flex-1 flex items-center justify-center gap-3">
-            {selectedUser ? (
+        <div className="shrink-0 px-4 md:px-6 py-3 bg-gradient-to-b from-white/[0.04] to-white/[0.01] backdrop-blur-xl border-b border-white/[0.08] flex items-center gap-3 shadow-[0_1px_0_0_rgba(255,255,255,0.03)_inset]">
+          <div className="w-9 md:hidden" />
+          <div className="flex-1 flex items-center gap-3 min-w-0">
+            {headerInfo ? (
               <>
-                {/* Avatar in header */}
-                <div
-                  className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold border-2 ${
-                    onlineUsers.includes(selectedUser._id)
-                      ? "border-cyber-cyan bg-cyber-cyan/10 text-cyber-cyan"
-                      : "border-cyber-border bg-cyber-surface-light text-cyber-text-dim"
-                  }`}
-                >
-                  {selectedUser.name.charAt(0).toUpperCase()}
-                </div>
-                <div className="text-center">
-                  <span className="font-semibold text-cyber-text">
-                    {selectedUser.name}
-                  </span>
-                  <div className="flex items-center justify-center gap-1.5">
+                <div className="relative shrink-0">
+                  <div
+                    className="h-10 w-10 rounded-full grid place-items-center text-sm font-semibold text-white shadow-lg ring-1 ring-white/10"
+                    style={{
+                      background: `linear-gradient(135deg, #5865F2, #a855f7)`,
+                      boxShadow: "0 6px 20px -8px rgba(120,90,255,0.55)",
+                    }}
+                  >
+                    {headerInfo.isGroup ? (
+                      <Users className="h-4 w-4" />
+                    ) : (
+                      headerInfo.name.charAt(0).toUpperCase()
+                    )}
+                  </div>
+                  {!headerInfo.isGroup && (
                     <span
-                      className={`inline-block h-2 w-2 rounded-full ${
-                        onlineUsers.includes(selectedUser._id)
-                          ? "bg-cyber-lime shadow-neon-lime"
-                          : "bg-cyber-text-dim"
+                      className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[#07080c] ${
+                        headerInfo.isOnline
+                          ? "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.7)]"
+                          : "bg-white/25"
                       }`}
                     />
-                    <span
-                      className={`text-xs ${
-                        onlineUsers.includes(selectedUser._id)
-                          ? "text-cyber-lime"
-                          : "text-cyber-text-dim"
-                      }`}
-                    >
-                      {onlineUsers.includes(selectedUser._id)
-                        ? "Online"
-                        : "Offline"}
-                    </span>
+                  )}
+                </div>
+                <div
+                  className="min-w-0 cursor-pointer"
+                  onClick={() => {
+                    if (selectedConversation?.type === "group") {
+                      setShowGroupInfo(true);
+                    }
+                  }}
+                >
+                  <div className="font-semibold tracking-tight text-white/95 truncate">
+                    {headerInfo.name}
+                  </div>
+                  <div className="text-[11px] text-white/50 flex items-center gap-1.5">
+                    {headerInfo.isOnline && !(headerInfo as any).isTyping && (
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)]" />
+                    )}
+                    {(headerInfo as any).isTyping ? (
+                      <span className="text-indigo-300">typing…</span>
+                    ) : (
+                      headerInfo.status
+                    )}
                   </div>
                 </div>
               </>
             ) : (
-              <span className="text-cyber-text-dim font-cyber tracking-wider text-sm">
-                SELECT A CHAT
-              </span>
+              <span className="text-white/40 text-sm tracking-tight">Select a conversation</span>
             )}
           </div>
 
-          {/* Search button */}
-          <button
-            onClick={() => setShowSearch(true)}
-            className="p-2 text-cyber-text-dim hover:text-cyber-cyan hover:bg-cyber-cyan/10 rounded-lg transition-all duration-300"
-            title="Search messages"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-              <path fillRule="evenodd" d="M10.5 3.75a6.75 6.75 0 100 13.5 6.75 6.75 0 000-13.5zM2.25 10.5a8.25 8.25 0 1114.59 5.28l4.69 4.69a.75.75 0 11-1.06 1.06l-4.69-4.69A8.25 8.25 0 012.25 10.5z" clipRule="evenodd" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              className="hidden sm:grid h-9 w-9 place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition"
+              title="Voice call (coming soon)"
+              disabled={!selectedConversation}
+            >
+              <Phone className="h-4 w-4" />
+            </button>
+            <button
+              className="hidden sm:grid h-9 w-9 place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition"
+              title="Video call (coming soon)"
+              disabled={!selectedConversation}
+            >
+              <Video className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setShowSearch(true)}
+              className="h-9 w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition"
+              title="Search messages"
+            >
+              <Search className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => {
+                if (selectedConversation?.type === "group") {
+                  setShowGroupInfo(true);
+                } else {
+                  setShowSettings(true);
+                }
+              }}
+              className="h-9 w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition"
+              title={selectedConversation?.type === "group" ? "Group info" : "Settings"}
+            >
+              <MoreVertical className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
-        {selectedUser && user ? (
-          <>
-            <MessageList
-              messages={messages}
-              currentUserId={user._id}
-              typingUser={typingUser}
-              selectedUserName={selectedUser.name}
-              loading={loading}
-              onMessagesUpdate={setMessages}
-            />
-            <AISuggestions
-              lastReceivedMessage={lastReceivedMessage}
-              onSelectSuggestion={handleAISuggestion}
-            />
-            <MessageInput
-              value={newMessage}
-              onChange={setNewMessage}
-              onSend={handleSend}
-              onSendMedia={handleSendMedia}
-              onTyping={handleTyping}
-              onStopTyping={handleStopTyping}
-            />
-          </>
+        {selectedConversation && user ? (
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <MessageList
+                messages={messages}
+                currentUserId={user._id}
+                typingUser={typingUser}
+                selectedUserName={
+                  selectedConversation.type === "group"
+                    ? selectedConversation.name || "Group"
+                    : selectedPartner?.name || ""
+                }
+                loading={loading}
+                onMessagesUpdate={setMessages}
+              />
+            </div>
+            <div className="shrink-0">
+              <AISuggestions
+                lastReceivedMessage={lastReceivedMessage}
+                onSelectSuggestion={handleAISuggestion}
+              />
+              <MessageInput
+                value={newMessage}
+                onChange={setNewMessage}
+                onSend={handleSend}
+                onSendMedia={handleSendMedia}
+                onTyping={handleTyping}
+                onStopTyping={handleStopTyping}
+              />
+            </div>
+          </div>
         ) : (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center text-cyber-text-dim">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-20 w-20 mx-auto mb-4 opacity-30"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1}
-                  d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                />
-              </svg>
-              <p className="text-lg font-cyber tracking-wider neon-text-cyan text-cyber-cyan/50">
-                NEONCHAT
-              </p>
-              <p className="text-sm mt-2">
-                Select a conversation from the sidebar
+          <div className="flex-1 min-h-0 flex items-center justify-center px-6">
+            <div className="text-center max-w-sm">
+              <div className="mx-auto grid place-items-center h-16 w-16 rounded-2xl bg-gradient-to-br from-[#5865F2] to-[#a855f7] shadow-lg shadow-indigo-500/30 mb-5">
+                <MessageSquare className="h-7 w-7 text-white" />
+              </div>
+              <h3 className="text-xl font-semibold tracking-tight text-white">Your messages</h3>
+              <p className="text-sm text-white/50 mt-2">
+                Pick a conversation from the sidebar to start chatting, or create a new group.
               </p>
             </div>
           </div>

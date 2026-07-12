@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { User } from "../types";
 import Avatar from "./Avatar";
+import { X, Check, Search, Users } from "lucide-react";
 
 interface CreateGroupDialogProps {
   users: User[];
@@ -19,11 +20,8 @@ const CreateGroupDialog = ({ users, onClose, onCreate }: CreateGroupDialogProps)
 
   const toggleUser = (userId: string) => {
     const next = new Set(selected);
-    if (next.has(userId)) {
-      next.delete(userId);
-    } else {
-      next.add(userId);
-    }
+    if (next.has(userId)) next.delete(userId);
+    else next.add(userId);
     setSelected(next);
   };
 
@@ -34,81 +32,98 @@ const CreateGroupDialog = ({ users, onClose, onCreate }: CreateGroupDialogProps)
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/80 z-50" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50" onClick={onClose} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div
-          className="bg-cyber-surface border border-cyber-border rounded-2xl w-full max-w-md shadow-2xl"
+          className="w-full max-w-md rounded-2xl shadow-2xl bg-[#12141b]/95 backdrop-blur-2xl border border-white/10 overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="p-4 border-b border-cyber-border flex items-center justify-between">
-            <h2 className="text-lg font-cyber text-cyber-cyan">CREATE GROUP</h2>
+          <div className="p-4 border-b border-white/10 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="grid place-items-center h-8 w-8 rounded-xl bg-gradient-to-br from-[#5865F2] to-[#a855f7]">
+                <Users className="h-4 w-4 text-white" />
+              </div>
+              <h2 className="text-base font-semibold text-white">Create group</h2>
+            </div>
             <button
               onClick={onClose}
-              className="p-2 text-cyber-text-dim hover:text-cyber-magenta transition-colors"
+              className="h-8 w-8 grid place-items-center rounded-lg text-white/50 hover:text-white hover:bg-white/[0.06] transition"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                <path fillRule="evenodd" d="M5.47 5.47a.75.75 0 011.06 0L12 10.94l5.47-5.47a.75.75 0 111.06 1.06L13.06 12l5.47 5.47a.75.75 0 11-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 01-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 010-1.06z" clipRule="evenodd" />
-              </svg>
+              <X className="h-4 w-4" />
             </button>
           </div>
 
           <div className="p-4 space-y-4">
-            <input
-              type="text"
-              placeholder="Group name..."
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full bg-cyber-bg border border-cyber-border rounded-lg px-4 py-3 text-cyber-text placeholder-cyber-text-dim outline-none focus:border-cyber-cyan transition-colors"
-            />
-
             <div>
-              <p className="text-sm text-cyber-text-dim mb-2">
-                Add participants ({selected.size} selected)
-              </p>
+              <label className="text-xs font-medium text-white/60 mb-1.5 block">Group name</label>
               <input
                 type="text"
-                placeholder="Search users..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full bg-cyber-bg border border-cyber-border rounded-lg px-4 py-2 text-cyber-text placeholder-cyber-text-dim outline-none focus:border-cyber-cyan transition-colors mb-2"
+                placeholder="e.g. Weekend Squad"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl bg-white/[0.05] border border-white/10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-white/25 transition"
               />
-              <div className="max-h-48 overflow-y-auto space-y-1">
-                {filteredUsers.map((user) => (
-                  <button
-                    key={user._id}
-                    onClick={() => toggleUser(user._id)}
-                    className={`w-full flex items-center gap-3 p-2 rounded-lg transition-all ${
-                      selected.has(user._id)
-                        ? "bg-cyber-cyan/10 border border-cyber-cyan/40"
-                        : "hover:bg-cyber-surface-light border border-transparent"
-                    }`}
-                  >
-                    <Avatar name={user.name} avatar={user.avatar} size="sm" />
-                    <span className="text-cyber-text">{user.name}</span>
-                    {selected.has(user._id) && (
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 ml-auto text-cyber-cyan">
-                        <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm13.36-1.814a.75.75 0 10-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.14-.094l3.75-5.25z" clipRule="evenodd" />
-                      </svg>
-                    )}
-                  </button>
-                ))}
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-medium text-white/60">Add members</label>
+                <span className="text-[11px] text-white/40">{selected.size} selected</span>
+              </div>
+              <div className="relative mb-2">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" />
+                <input
+                  type="text"
+                  placeholder="Search people"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 rounded-xl bg-white/[0.05] border border-white/10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-white/25 transition"
+                />
+              </div>
+              <div className="max-h-56 overflow-y-auto space-y-0.5 -mx-1 px-1">
+                {filteredUsers.map((user) => {
+                  const isSel = selected.has(user._id);
+                  return (
+                    <button
+                      key={user._id}
+                      onClick={() => toggleUser(user._id)}
+                      className={`w-full flex items-center gap-3 p-2 rounded-xl transition ${
+                        isSel
+                          ? "bg-white/[0.08] border border-white/10"
+                          : "border border-transparent hover:bg-white/[0.04]"
+                      }`}
+                    >
+                      <Avatar name={user.name} avatar={user.avatar} size="sm" />
+                      <span className="text-sm text-white/90 flex-1 text-left">{user.name}</span>
+                      <div
+                        className={`h-5 w-5 rounded-full grid place-items-center border transition ${
+                          isSel
+                            ? "bg-[#5865F2] border-[#5865F2]"
+                            : "border-white/20"
+                        }`}
+                      >
+                        {isSel && <Check className="h-3 w-3 text-white" />}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
 
-          <div className="p-4 border-t border-cyber-border flex gap-3">
+          <div className="p-4 border-t border-white/10 flex gap-3">
             <button
               onClick={onClose}
-              className="flex-1 py-2 rounded-lg border border-cyber-border text-cyber-text-dim hover:border-cyber-text-dim transition-colors"
+              className="flex-1 h-10 rounded-xl border border-white/10 text-white/70 hover:bg-white/[0.04] transition text-sm"
             >
               Cancel
             </button>
             <button
               onClick={handleCreate}
               disabled={!name.trim() || selected.size === 0}
-              className="flex-1 py-2 rounded-lg bg-gradient-to-r from-cyber-cyan to-cyber-blue text-cyber-bg font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:shadow-neon-cyan transition-all"
+              className="flex-1 h-10 rounded-xl bg-gradient-to-b from-[#6b78ff] to-[#5865F2] text-white font-medium text-sm shadow-lg shadow-indigo-500/30 disabled:opacity-40 disabled:cursor-not-allowed hover:shadow-indigo-500/40 transition"
             >
-              Create
+              Create group
             </button>
           </div>
         </div>

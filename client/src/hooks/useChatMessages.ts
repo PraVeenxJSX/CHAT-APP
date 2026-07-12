@@ -2,22 +2,23 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useSocket } from "../context/SocketContext";
 import { fetchChatHistory } from "../api/message";
-import type { Message, User } from "../types";
+import { getConversationMessages } from "../api/conversation";
+import type { Message, Conversation } from "../types";
 
-export const useChatMessages = (selectedUser: User | null) => {
+export const useChatMessages = (selectedConversation: Conversation | null) => {
   const { token, user } = useAuth();
   const { addMessageListener, markSeen } = useSocket();
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
-  const selectedUserRef = useRef(selectedUser);
+  const selectedConvRef = useRef(selectedConversation);
 
   useEffect(() => {
-    selectedUserRef.current = selectedUser;
-  }, [selectedUser]);
+    selectedConvRef.current = selectedConversation;
+  }, [selectedConversation]);
 
-  // Fetch history when selected user changes
+  // Fetch history when selected conversation changes
   useEffect(() => {
-    if (!selectedUser || !token) {
+    if (!selectedConversation || !token || !user) {
       setMessages([]);
       return;
     }
@@ -25,26 +26,62 @@ export const useChatMessages = (selectedUser: User | null) => {
     setLoading(true);
     setMessages([]);
 
-    fetchChatHistory(selectedUser._id, token)
-      .then((data) => setMessages(data))
-      .finally(() => setLoading(false));
-
-    markSeen(selectedUser._id);
-  }, [selectedUser?._id, token, markSeen]);
+    if (selectedConversation.type === "group") {
+      // Group: fetch via conversation endpoint
+      getConversationMessages(selectedConversation._id, token)
+        .then((data) => setMessages(data))
+        .finally(() => setLoading(false));
+    } else {
+      // Direct: find partner and fetch via existing message endpoint
+      const partner = selectedConversation.participants.find(
+        (p) => p._id !== user._id
+      );
+      if (partner) {
+        fetchChatHistory(partner._id, token)
+          .then((data) => setMessages(data))
+          .finally(() => setLoading(false));
+        markSeen(partner._id);
+      } else {
+        setLoading(false);
+      }
+    }
+  }, [selectedConversation?._id, token, markSeen, user]);
 
   // Listen for new messages
   useEffect(() => {
     const unsub = addMessageListener((msg: Message) => {
-      const currentSelected = selectedUserRef.current;
-      if (!currentSelected || !user) return;
+      const currentConv = selectedConvRef.current;
+      if (!currentConv || !user) return;
 
-      const isSender = msg.sender._id === user._id && msg.receiver._id === currentSelected._id;
-      const isReceiver = msg.sender._id === currentSelected._id && msg.receiver._id === user._id;
+      if (currentConv.type === "group") {
+        // Group: match by conversationId
+        if (msg.conversationId === currentConv._id) {
+          setMessages((prev) => {
+            // Prevent duplicates
+            if (prev.some((m) => m._id === msg._id)) return prev;
+            return [...prev, msg];
+          });
+        }
+      } else {
+        // Direct: match by sender/receiver
+        const partner = currentConv.participants.find(
+          (p) => p._id !== user._id
+        );
+        if (!partner) return;
 
-      if (isSender || isReceiver) {
-        setMessages((prev) => [...prev, msg]);
-        if (isReceiver) {
-          markSeen(currentSelected._id);
+        const isSender =
+          msg.sender._id === user._id && msg.receiver?._id === partner._id;
+        const isReceiver =
+          msg.sender._id === partner._id && msg.receiver?._id === user._id;
+
+        if (isSender || isReceiver) {
+          setMessages((prev) => {
+            if (prev.some((m) => m._id === msg._id)) return prev;
+            return [...prev, msg];
+          });
+          if (isReceiver) {
+            markSeen(partner._id);
+          }
         }
       }
     });

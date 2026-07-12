@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { fetchReplySuggestions } from "../api/message";
 import { useAuth } from "../context/AuthContext";
 import type { Message } from "../types";
+import { Sparkles } from "lucide-react";
 
 interface AISuggestionsProps {
   lastReceivedMessage: Message | null;
@@ -31,49 +32,36 @@ const AISuggestions = ({ lastReceivedMessage, onSelectSuggestion }: AISuggestion
 
     fetchReplySuggestions(lastReceivedMessage.content, token)
       .then((data) => {
-        if (Array.isArray(data)) {
-          setSuggestions(data.slice(0, 4));
-        }
+        if (Array.isArray(data)) setSuggestions(data.slice(0, 4));
       })
-      .catch((err) => {
-        console.error("AI suggestions error:", err);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+      .catch((err) => console.error("AI suggestions error:", err))
+      .finally(() => setLoading(false));
 
-    // Auto-hide suggestions after 30s
-    const timeout = setTimeout(() => {
-      setSuggestions([]);
-    }, 30000);
-
+    const timeout = setTimeout(() => setSuggestions([]), 30000);
     return () => clearTimeout(timeout);
   }, [lastReceivedMessage, token, lastMessageId]);
 
   if (loading) {
     return (
-      <div className="px-4 py-2 flex items-center gap-2">
-        <span className="text-xs text-cyber-purple">AI thinking</span>
+      <div className="px-4 md:px-6 py-2 flex items-center gap-2 border-t border-white/10 bg-white/[0.02]">
+        <Sparkles className="h-3.5 w-3.5 text-purple-300" />
+        <span className="text-xs text-white/60">AI is thinking</span>
         <div className="flex gap-1">
-          <span className="h-1.5 w-1.5 rounded-full bg-cyber-purple animate-bounce [animation-delay:0ms]" />
-          <span className="h-1.5 w-1.5 rounded-full bg-cyber-purple animate-bounce [animation-delay:100ms]" />
-          <span className="h-1.5 w-1.5 rounded-full bg-cyber-purple animate-bounce [animation-delay:200ms]" />
+          <span className="h-1.5 w-1.5 rounded-full bg-purple-400 animate-bounce [animation-delay:0ms]" />
+          <span className="h-1.5 w-1.5 rounded-full bg-purple-400 animate-bounce [animation-delay:100ms]" />
+          <span className="h-1.5 w-1.5 rounded-full bg-purple-400 animate-bounce [animation-delay:200ms]" />
         </div>
       </div>
     );
   }
 
-  if (suggestions.length === 0) {
-    return null;
-  }
+  if (suggestions.length === 0) return null;
 
   return (
-    <div className="px-4 py-2 border-t border-cyber-border bg-cyber-surface/50">
-      <div className="flex items-center gap-2 mb-2">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-cyber-purple">
-          <path fillRule="evenodd" d="M9 4.5a.75.75 0 01.721.544l.813 2.846a3.75 3.75 0 002.576 2.576l2.846.813a.75.75 0 010 1.442l-2.846.813a3.75 3.75 0 00-2.576 2.576l-.813 2.846a.75.75 0 01-1.442 0l-.813-2.846a3.75 3.75 0 00-2.576-2.576l-2.846-.813a.75.75 0 010-1.442l2.846-.813A3.75 3.75 0 007.466 7.89l.813-2.846A.75.75 0 019 4.5zM18 1.5a.75.75 0 01.728.568l.258 1.036c.236.94.97 1.674 1.91 1.91l1.036.258a.75.75 0 010 1.456l-1.036.258c-.94.236-1.674.97-1.91 1.91l-.258 1.036a.75.75 0 01-1.456 0l-.258-1.036a2.625 2.625 0 00-1.91-1.91l-1.036-.258a.75.75 0 010-1.456l1.036-.258a2.625 2.625 0 001.91-1.91l.258-1.036A.75.75 0 0118 1.5z" clipRule="evenodd" />
-        </svg>
-        <span className="text-xs text-cyber-purple font-cyber">AI SUGGESTIONS</span>
+    <div className="px-4 md:px-6 py-2.5 border-t border-white/10 bg-white/[0.02]">
+      <div className="flex items-center gap-1.5 mb-2 text-purple-300/90">
+        <Sparkles className="h-3.5 w-3.5" />
+        <span className="text-[11px] font-medium tracking-wide uppercase">Smart replies</span>
       </div>
       <div className="flex flex-wrap gap-2">
         {suggestions.map((suggestion, idx) => (
@@ -83,7 +71,7 @@ const AISuggestions = ({ lastReceivedMessage, onSelectSuggestion }: AISuggestion
               onSelectSuggestion(suggestion);
               setSuggestions([]);
             }}
-            className="px-3 py-1.5 text-sm rounded-full bg-cyber-purple/10 border border-cyber-purple/40 text-cyber-purple hover:border-cyber-purple hover:shadow-neon-purple transition-all duration-300"
+            className="px-3 py-1.5 text-sm rounded-full bg-white/[0.05] border border-white/10 text-white/85 hover:bg-white/[0.1] hover:border-white/20 transition"
           >
             {suggestion}
           </button>

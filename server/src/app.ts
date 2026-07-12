@@ -6,6 +6,7 @@ import userRoutes from "./routes/user.routes";
 import aiRoutes from "./routes/ai.routes";
 import uploadRoutes from "./routes/upload.routes";
 import conversationRoutes from "./routes/conversation.routes";
+import groupInvitationRoutes from "./routes/groupInvitation.routes";
 
 
 
@@ -22,6 +23,7 @@ app.use("/api/messages", messageRoutes);
 app.use("/api/ai", aiRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/conversations", conversationRoutes);
+app.use("/api/groups", groupInvitationRoutes);
 app.use("/uploads", express.static("uploads"));
 
 

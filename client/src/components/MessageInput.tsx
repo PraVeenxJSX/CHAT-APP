@@ -4,6 +4,7 @@ import type { EmojiClickData } from "emoji-picker-react";
 import { useAuth } from "../context/AuthContext";
 import { uploadFile } from "../api/message";
 import type { SendMessagePayload } from "../types";
+import { Smile, Paperclip, Mic, Send, X } from "lucide-react";
 
 interface MessageInputProps {
   value: string;
@@ -39,7 +40,6 @@ const MessageInput = ({
     (val: string) => {
       onChange(val);
       onTyping();
-
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = setTimeout(() => {
         onStopTyping();
@@ -58,7 +58,6 @@ const MessageInput = ({
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !token) return;
-
     setUploading(true);
     try {
       const { fileUrl, fileType } = await uploadFile(file, token);
@@ -85,21 +84,16 @@ const MessageInput = ({
           ? "audio/webm;codecs=opus"
           : "audio/webm",
       });
-
       audioChunksRef.current = [];
-
       mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) audioChunksRef.current.push(e.data);
       };
-
       mediaRecorder.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
-
         const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
         const file = new File([blob], `voice-${Date.now()}.webm`, {
           type: "audio/webm",
         });
-
         if (!token) return;
         setUploading(true);
         try {
@@ -111,12 +105,10 @@ const MessageInput = ({
           setUploading(false);
         }
       };
-
       mediaRecorderRef.current = mediaRecorder;
       mediaRecorder.start();
       setRecording(true);
       setRecordingTime(0);
-
       recordingIntervalRef.current = setInterval(() => {
         setRecordingTime((prev) => prev + 1);
       }, 1000);
@@ -164,57 +156,49 @@ const MessageInput = ({
 
   if (recording) {
     return (
-      <div className="p-4 flex items-center gap-3 bg-cyber-surface border-t border-cyber-border">
+      <div className="p-3 md:p-4 flex items-center gap-2 bg-white/[0.02] backdrop-blur-xl border-t border-white/10">
         <button
           onClick={cancelRecording}
-          className="p-2 text-cyber-magenta hover:bg-cyber-magenta/10 rounded-lg transition-colors"
+          className="h-10 w-10 grid place-items-center rounded-xl text-red-300 hover:bg-red-500/10 transition"
+          title="Cancel"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-            <path fillRule="evenodd" d="M5.47 5.47a.75.75 0 011.06 0L12 10.94l5.47-5.47a.75.75 0 111.06 1.06L13.06 12l5.47 5.47a.75.75 0 11-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 01-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 010-1.06z" clipRule="evenodd" />
-          </svg>
+          <X className="h-4 w-4" />
         </button>
-
-        <div className="flex-1 flex items-center gap-3">
-          <span className="h-3 w-3 rounded-full bg-cyber-magenta animate-pulse shadow-neon-magenta" />
-          <span className="text-cyber-magenta font-mono text-sm">
+        <div className="flex-1 flex items-center gap-3 h-11 px-4 rounded-2xl bg-white/[0.04] border border-white/10">
+          <span className="h-2.5 w-2.5 rounded-full bg-red-400 animate-pulse" />
+          <span className="text-red-200/90 font-mono text-sm">
             {formatRecordingTime(recordingTime)}
           </span>
-          <div className="flex-1 flex items-center gap-1">
-            {Array.from({ length: 20 }).map((_, i) => (
+          <div className="flex-1 flex items-center gap-1 justify-center">
+            {Array.from({ length: 24 }).map((_, i) => (
               <div
                 key={i}
-                className="w-1 bg-cyber-magenta/60 rounded-full animate-pulse"
+                className="w-0.5 bg-white/60 rounded-full animate-pulse"
                 style={{
-                  height: `${8 + Math.random() * 16}px`,
+                  height: `${6 + Math.random() * 18}px`,
                   animationDelay: `${i * 50}ms`,
                 }}
               />
             ))}
           </div>
         </div>
-
         <button
           onClick={stopRecording}
-          className="bg-gradient-to-r from-cyber-cyan to-cyber-blue px-5 py-3 rounded-xl text-cyber-bg font-bold hover:shadow-neon-cyan active:scale-95 transition-all duration-300"
+          className="h-11 w-11 grid place-items-center rounded-2xl bg-gradient-to-b from-[#6b78ff] to-[#5865F2] text-white shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40 active:scale-95 transition"
+          title="Send"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-            <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
-          </svg>
+          <Send className="h-4 w-4" />
         </button>
       </div>
     );
   }
 
   return (
-    <div className="p-4 flex gap-2 bg-cyber-surface border-t border-cyber-border relative">
-      {/* Emoji picker popover */}
+    <div className="p-3 md:p-4 flex items-end gap-2 bg-gradient-to-t from-white/[0.04] to-white/[0.01] backdrop-blur-xl border-t border-white/[0.08] relative">
       {showEmojiPicker && (
         <>
-          <div
-            className="fixed inset-0 z-10"
-            onClick={() => setShowEmojiPicker(false)}
-          />
-          <div className="absolute bottom-full left-0 mb-2 z-20">
+          <div className="fixed inset-0 z-10" onClick={() => setShowEmojiPicker(false)} />
+          <div className="absolute bottom-full left-3 mb-2 z-20 rounded-2xl overflow-hidden shadow-2xl border border-white/10">
             <EmojiPicker
               theme={Theme.DARK}
               onEmojiClick={handleEmojiClick}
@@ -227,19 +211,6 @@ const MessageInput = ({
         </>
       )}
 
-      {/* Emoji button */}
-      <button
-        onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-        disabled={disabled || uploading}
-        className="p-3 text-cyber-text-dim hover:text-cyber-purple hover:bg-cyber-purple/10 rounded-xl transition-all duration-300 disabled:opacity-30"
-        title="Emoji"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-          <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zm-2.625 6c-.54 0-.828.419-.936.634a1.96 1.96 0 00-.189.866c0 .298.059.605.189.866.108.215.395.634.936.634.54 0 .828-.419.936-.634.13-.26.189-.568.189-.866 0-.298-.059-.605-.189-.866-.108-.215-.395-.634-.936-.634zm4.314.634c.108-.215.395-.634.936-.634.54 0 .828.419.936.634.13.26.189.568.189.866 0 .298-.059.605-.189.866-.108.215-.395.634-.936.634-.54 0-.828-.419-.936-.634a1.96 1.96 0 01-.189-.866c0-.298.059-.605.189-.866zm2.023 6.828a.75.75 0 10-1.06-1.06 3.75 3.75 0 01-5.304 0 .75.75 0 00-1.06 1.06 5.25 5.25 0 007.424 0z" clipRule="evenodd" />
-        </svg>
-      </button>
-
-      {/* File attachment */}
       <input
         ref={fileInputRef}
         type="file"
@@ -247,58 +218,59 @@ const MessageInput = ({
         onChange={handleFileSelect}
         accept="image/*,application/pdf,.doc,.docx,.zip,.rar,.txt"
       />
-      <button
-        onClick={() => fileInputRef.current?.click()}
-        disabled={disabled || uploading}
-        className="p-3 text-cyber-text-dim hover:text-cyber-cyan hover:bg-cyber-cyan/10 rounded-xl transition-all duration-300 disabled:opacity-30"
-        title="Attach file"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-          <path fillRule="evenodd" d="M18.97 3.659a2.25 2.25 0 00-3.182 0l-10.94 10.94a3.75 3.75 0 105.304 5.303l7.693-7.693a.75.75 0 011.06 1.06l-7.693 7.693a5.25 5.25 0 01-7.424-7.424l10.939-10.94a3.75 3.75 0 115.303 5.304L9.097 18.835l-.008.008-.007.007a2.25 2.25 0 01-3.182-3.182l.006-.006.007-.007 7.694-7.694a.75.75 0 011.06 1.06L7.974 16.7a.75.75 0 101.06 1.06l8.933-8.933a2.25 2.25 0 000-3.168z" clipRule="evenodd" />
-        </svg>
-      </button>
 
-      {/* Text input */}
-      <input
-        className="flex-1 bg-cyber-bg border border-cyber-border rounded-xl px-4 py-3 text-cyber-text placeholder-cyber-text-dim outline-none focus:border-cyber-cyan focus:shadow-neon-cyan transition-all duration-300"
-        value={value}
-        onChange={(e) => handleChange(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder={uploading ? "Uploading..." : "Type a message..."}
-        disabled={disabled || uploading}
-      />
+      <div className="flex-1 flex items-center gap-1 pl-2 pr-1.5 py-1.5 rounded-2xl bg-white/[0.05] border border-white/[0.08] focus-within:border-indigo-400/40 focus-within:bg-white/[0.07] focus-within:shadow-[0_0_0_3px_rgba(88,101,242,0.14)] transition">
+        <button
+          onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+          disabled={disabled || uploading}
+          className="h-9 w-9 grid place-items-center rounded-xl text-white/50 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30"
+          title="Emoji"
+        >
+          <Smile className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={disabled || uploading}
+          className="h-9 w-9 grid place-items-center rounded-xl text-white/50 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30"
+          title="Attach file"
+        >
+          <Paperclip className="h-4 w-4" />
+        </button>
+        <input
+          className="flex-1 bg-transparent px-2 py-2 text-sm text-white placeholder-white/35 outline-none"
+          value={value}
+          onChange={(e) => handleChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={uploading ? "Uploading…" : "Message"}
+          disabled={disabled || uploading}
+        />
+      </div>
 
-      {/* Voice record or Send */}
       {value.trim() ? (
         <button
           onClick={onSend}
           disabled={disabled || uploading}
-          className="bg-gradient-to-r from-cyber-cyan to-cyber-blue px-5 py-3 rounded-xl text-cyber-bg font-bold hover:shadow-neon-cyan active:scale-95 transition-all duration-300 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="h-11 w-11 shrink-0 grid place-items-center rounded-2xl bg-gradient-to-b from-[#6b78ff] to-[#5865F2] text-white shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          title="Send"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-            <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
-          </svg>
+          <Send className="h-4 w-4" />
         </button>
       ) : (
         <button
           onClick={startRecording}
           disabled={disabled || uploading}
-          className="p-3 text-cyber-text-dim hover:text-cyber-magenta hover:bg-cyber-magenta/10 rounded-xl transition-all duration-300 disabled:opacity-30"
+          className="h-11 w-11 shrink-0 grid place-items-center rounded-2xl bg-white/[0.05] border border-white/10 text-white/70 hover:text-white hover:bg-white/[0.08] transition disabled:opacity-30"
           title="Record voice message"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-            <path d="M8.25 4.5a3.75 3.75 0 117.5 0v8.25a3.75 3.75 0 11-7.5 0V4.5z" />
-            <path d="M6 10.5a.75.75 0 01.75.75v1.5a5.25 5.25 0 1010.5 0v-1.5a.75.75 0 011.5 0v1.5a6.751 6.751 0 01-6 6.709v2.291h3a.75.75 0 010 1.5h-7.5a.75.75 0 010-1.5h3v-2.291a6.751 6.751 0 01-6-6.709v-1.5A.75.75 0 016 10.5z" />
-          </svg>
+          <Mic className="h-4 w-4" />
         </button>
       )}
 
-      {/* Upload progress overlay */}
       {uploading && (
-        <div className="absolute inset-x-0 bottom-full flex justify-center pb-2">
-          <div className="bg-cyber-surface border border-cyber-border rounded-lg px-4 py-2 flex items-center gap-2">
-            <div className="h-2 w-2 rounded-full bg-cyber-cyan animate-pulse" />
-            <span className="text-sm text-cyber-text-dim">Uploading...</span>
+        <div className="absolute inset-x-0 bottom-full flex justify-center pb-2 pointer-events-none">
+          <div className="bg-white/[0.06] backdrop-blur border border-white/10 rounded-full px-3 py-1.5 flex items-center gap-2">
+            <div className="h-1.5 w-1.5 rounded-full bg-[#5865F2] animate-pulse" />
+            <span className="text-xs text-white/70">Uploading…</span>
           </div>
         </div>
       )}

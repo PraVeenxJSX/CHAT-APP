@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Message, Reaction } from "../types";
 import AudioPlayer from "./AudioPlayer";
+import { Download, FileText, Check, CheckCheck, SmilePlus } from "lucide-react";
 
 interface MessageBubbleProps {
   message: Message;
@@ -31,9 +32,11 @@ const groupReactions = (reactions?: Reaction[]) => {
 const MessageContent = ({
   msg,
   onImageClick,
+  isOwn,
 }: {
   msg: Message;
   onImageClick: (src: string) => void;
+  isOwn: boolean;
 }) => {
   switch (msg.type) {
     case "image":
@@ -41,7 +44,7 @@ const MessageContent = ({
         <img
           src={`${API_BASE}${msg.fileUrl}`}
           alt="shared image"
-          className="max-w-full max-h-64 rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+          className="max-w-full max-h-72 rounded-xl cursor-pointer hover:opacity-90 transition-opacity"
           onClick={() => onImageClick(`${API_BASE}${msg.fileUrl}`)}
           loading="lazy"
         />
@@ -57,32 +60,31 @@ const MessageContent = ({
           download
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-cyber-bg/50 border border-cyber-border hover:border-cyber-cyan/40 transition-all group"
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all group ${
+            isOwn
+              ? "bg-white/10 border-white/15 hover:bg-white/15"
+              : "bg-white/[0.04] border-white/10 hover:bg-white/[0.08]"
+          }`}
         >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8 text-cyber-purple flex-shrink-0">
-            <path d="M5.625 1.5c-1.036 0-1.875.84-1.875 1.875v17.25c0 1.035.84 1.875 1.875 1.875h12.75c1.035 0 1.875-.84 1.875-1.875V12.75A3.75 3.75 0 0016.5 9h-1.875a1.875 1.875 0 01-1.875-1.875V5.25A3.75 3.75 0 009 1.5H5.625z" />
-            <path d="M12.971 1.816A5.23 5.23 0 0114.25 5.25v1.875c0 .207.168.375.375.375H16.5a5.23 5.23 0 013.434 1.279 9.768 9.768 0 00-6.963-6.963z" />
-          </svg>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm text-cyber-text truncate group-hover:text-cyber-cyan transition-colors">
-              {msg.content || "File"}
-            </p>
-            <p className="text-[10px] text-cyber-text-dim">{msg.fileType || "Download"}</p>
+          <div className="h-9 w-9 rounded-lg grid place-items-center bg-white/10 shrink-0">
+            <FileText className="h-4 w-4 text-white/80" />
           </div>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-cyber-text-dim group-hover:text-cyber-cyan transition-colors flex-shrink-0">
-            <path fillRule="evenodd" d="M12 2.25a.75.75 0 01.75.75v11.69l3.22-3.22a.75.75 0 111.06 1.06l-4.5 4.5a.75.75 0 01-1.06 0l-4.5-4.5a.75.75 0 111.06-1.06l3.22 3.22V3a.75.75 0 01.75-.75zm-9 13.5a.75.75 0 01.75.75v2.25a1.5 1.5 0 001.5 1.5h13.5a1.5 1.5 0 001.5-1.5V16.5a.75.75 0 011.5 0v2.25a3 3 0 01-3 3H5.25a3 3 0 01-3-3V16.5a.75.75 0 01.75-.75z" clipRule="evenodd" />
-          </svg>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-white truncate">{msg.content || "File"}</p>
+            <p className="text-[11px] text-white/50">{msg.fileType || "Download"}</p>
+          </div>
+          <Download className="h-4 w-4 text-white/50 group-hover:text-white transition-colors shrink-0" />
         </a>
       );
 
     case "text":
     default:
-      return <p className="break-words text-cyber-text">{msg.content}</p>;
+      return <p className="break-words whitespace-pre-wrap leading-relaxed">{msg.content}</p>;
   }
 };
 
 const MessageBubble = ({ message, isOwn, onReact, onImageClick }: MessageBubbleProps) => {
-  const [showReactions, setShowReactions] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const grouped = groupReactions(message.reactions);
 
   return (
@@ -92,9 +94,11 @@ const MessageBubble = ({ message, isOwn, onReact, onImageClick }: MessageBubbleP
       <div className="relative max-w-[85%] md:max-w-[60%]">
         {/* Quick reaction bar on hover */}
         <div
-          className={`absolute -top-8 ${isOwn ? "right-0" : "left-0"} opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10`}
+          className={`absolute -top-9 ${
+            isOwn ? "right-0" : "left-0"
+          } opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity duration-200 z-10`}
         >
-          <div className="flex items-center gap-0.5 bg-cyber-surface/95 backdrop-blur-sm border border-cyber-border rounded-full px-1.5 py-0.5 shadow-lg">
+          <div className="flex items-center gap-0.5 bg-[#161821]/95 backdrop-blur-xl border border-white/10 rounded-full px-1.5 py-1 shadow-lg shadow-black/40">
             {QUICK_REACTIONS.map((emoji) => (
               <button
                 key={emoji}
@@ -104,36 +108,57 @@ const MessageBubble = ({ message, isOwn, onReact, onImageClick }: MessageBubbleP
                 {emoji}
               </button>
             ))}
+            <button
+              onClick={() => setPickerOpen((v) => !v)}
+              className="ml-0.5 p-1 rounded-full text-white/50 hover:text-white hover:bg-white/[0.08] transition"
+              title="More"
+            >
+              <SmilePlus className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
 
         {/* Message bubble */}
         <div
-          className={`px-4 py-2.5 rounded-2xl border transition-all ${
+          onDoubleClick={() => setPickerOpen((v) => !v)}
+          className={`px-4 py-2.5 text-[13.5px] shadow-sm transition-all ${
             isOwn
-              ? "bg-cyber-cyan/10 border-cyber-cyan/30 rounded-br-sm"
-              : "bg-cyber-surface-light border-cyber-border rounded-bl-sm"
+              ? "text-white rounded-2xl rounded-br-md"
+              : "text-white/95 rounded-2xl rounded-bl-md bg-white/[0.055] border border-white/[0.09] backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
           }`}
-          onDoubleClick={() => setShowReactions(!showReactions)}
+          style={
+            isOwn
+              ? {
+                  background:
+                    "linear-gradient(135deg, #6b78ff 0%, #5865F2 45%, #7c3aed 100%)",
+                  boxShadow:
+                    "0 8px 24px -10px rgba(88,101,242,0.6), inset 0 1px 0 rgba(255,255,255,0.18)",
+                }
+              : undefined
+          }
         >
-          <MessageContent msg={message} onImageClick={onImageClick} />
+          <MessageContent msg={message} onImageClick={onImageClick} isOwn={isOwn} />
 
-          <div className={`flex items-center gap-1.5 mt-1 ${isOwn ? "justify-end" : "justify-start"}`}>
-            <span className="text-[10px] text-cyber-text-dim">
+          <div
+            className={`flex items-center gap-1 mt-1 ${
+              isOwn ? "justify-end text-white/70" : "justify-start text-white/40"
+            }`}
+          >
+            <span className="text-[10px]">
               {new Date(message.createdAt).toLocaleTimeString([], {
                 hour: "2-digit",
                 minute: "2-digit",
               })}
             </span>
             {isOwn && (
-              <span
-                className={`text-[10px] ${
-                  message.status === "read" || message.status === ("seen" as string)
-                    ? "text-cyber-cyan neon-text-cyan"
-                    : "text-cyber-text-dim"
-                }`}
-              >
-                {message.status === "sent" ? "\u2713" : "\u2713\u2713"}
+              <span className="ml-0.5">
+                {message.status === "read" || message.status === ("seen" as string) ? (
+                  <CheckCheck className="h-3 w-3 text-sky-200" />
+                ) : message.status === "delivered" ? (
+                  <CheckCheck className="h-3 w-3" />
+                ) : (
+                  <Check className="h-3 w-3" />
+                )}
               </span>
             )}
           </div>
@@ -141,15 +166,36 @@ const MessageBubble = ({ message, isOwn, onReact, onImageClick }: MessageBubbleP
 
         {/* Reaction badges */}
         {grouped.length > 0 && (
-          <div className={`flex flex-wrap gap-1 mt-1 ${isOwn ? "justify-end" : "justify-start"}`}>
+          <div
+            className={`flex flex-wrap gap-1 mt-1.5 ${isOwn ? "justify-end" : "justify-start"}`}
+          >
             {grouped.map(({ emoji, count }) => (
               <button
                 key={emoji}
                 onClick={() => onReact(message._id, emoji)}
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-cyber-surface-light/80 border border-cyber-border hover:border-cyber-cyan/40 text-xs transition-all hover:shadow-neon-cyan"
+                className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/[0.06] border border-white/10 hover:bg-white/[0.1] text-xs text-white/80 transition"
               >
                 <span>{emoji}</span>
-                {count > 1 && <span className="text-cyber-text-dim">{count}</span>}
+                {count > 1 && <span className="text-white/50">{count}</span>}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {pickerOpen && (
+          <div
+            className={`absolute ${isOwn ? "right-0" : "left-0"} mt-1 z-10 flex gap-1 bg-[#161821]/95 backdrop-blur-xl border border-white/10 rounded-full px-2 py-1 shadow-lg`}
+          >
+            {QUICK_REACTIONS.map((emoji) => (
+              <button
+                key={emoji}
+                onClick={() => {
+                  onReact(message._id, emoji);
+                  setPickerOpen(false);
+                }}
+                className="hover:scale-125 transition-transform text-sm"
+              >
+                {emoji}
               </button>
             ))}
           </div>

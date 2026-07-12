@@ -3,6 +3,7 @@ import { searchMessages } from "../api/message";
 import { useAuth } from "../context/AuthContext";
 import type { Message } from "../types";
 import Avatar from "./Avatar";
+import { Search, X } from "lucide-react";
 
 interface SearchPanelProps {
   onClose: () => void;
@@ -15,38 +16,37 @@ const SearchPanel = ({ onClose, onMessageClick }: SearchPanelProps) => {
   const [results, setResults] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const doSearch = useCallback(async (q: string) => {
-    if (!q.trim() || !token) {
-      setResults([]);
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const data = await searchMessages(q, token);
-      setResults(data);
-    } catch (err) {
-      console.error("Search error:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [token]);
+  const doSearch = useCallback(
+    async (q: string) => {
+      if (!q.trim() || !token) {
+        setResults([]);
+        return;
+      }
+      setLoading(true);
+      try {
+        const data = await searchMessages(q, token);
+        setResults(data);
+      } catch (err) {
+        console.error("Search error:", err);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [token]
+  );
 
   useEffect(() => {
-    const debounce = setTimeout(() => {
-      doSearch(query);
-    }, 300);
-
+    const debounce = setTimeout(() => doSearch(query), 300);
     return () => clearTimeout(debounce);
   }, [query, doSearch]);
 
   const highlightMatch = (text: string, q: string) => {
     if (!q.trim()) return text;
-    const regex = new RegExp(`(${q})`, "gi");
+    const regex = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi");
     const parts = text.split(regex);
     return parts.map((part, i) =>
       regex.test(part) ? (
-        <span key={i} className="bg-cyber-cyan/30 text-cyber-cyan">
+        <span key={i} className="bg-[#5865F2]/30 text-white rounded px-0.5">
           {part}
         </span>
       ) : (
@@ -57,74 +57,64 @@ const SearchPanel = ({ onClose, onMessageClick }: SearchPanelProps) => {
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/80 z-50" onClick={onClose} />
-      <div className="fixed inset-x-4 top-20 max-w-xl mx-auto bg-cyber-surface border border-cyber-border rounded-2xl z-50 shadow-2xl overflow-hidden">
-        {/* Search input */}
-        <div className="p-4 border-b border-cyber-border flex items-center gap-3">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-cyber-cyan flex-shrink-0">
-            <path fillRule="evenodd" d="M10.5 3.75a6.75 6.75 0 100 13.5 6.75 6.75 0 000-13.5zM2.25 10.5a8.25 8.25 0 1114.59 5.28l4.69 4.69a.75.75 0 11-1.06 1.06l-4.69-4.69A8.25 8.25 0 012.25 10.5z" clipRule="evenodd" />
-          </svg>
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50" onClick={onClose} />
+      <div className="fixed inset-x-4 top-20 max-w-xl mx-auto rounded-2xl z-50 shadow-2xl overflow-hidden bg-[#12141b]/95 backdrop-blur-2xl border border-white/10">
+        <div className="p-3 border-b border-white/10 flex items-center gap-2">
+          <Search className="h-4 w-4 text-white/50 ml-2" />
           <input
             type="text"
-            placeholder="Search messages..."
+            placeholder="Search messages"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             autoFocus
-            className="flex-1 bg-transparent text-cyber-text placeholder-cyber-text-dim outline-none"
+            className="flex-1 bg-transparent px-2 py-2 text-white placeholder-white/35 outline-none"
           />
           <button
             onClick={onClose}
-            className="p-2 text-cyber-text-dim hover:text-cyber-magenta transition-colors"
+            className="h-8 w-8 grid place-items-center rounded-lg text-white/50 hover:text-white hover:bg-white/[0.06] transition"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-              <path fillRule="evenodd" d="M5.47 5.47a.75.75 0 011.06 0L12 10.94l5.47-5.47a.75.75 0 111.06 1.06L13.06 12l5.47 5.47a.75.75 0 11-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 01-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 010-1.06z" clipRule="evenodd" />
-            </svg>
+            <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* Results */}
         <div className="max-h-96 overflow-y-auto">
           {loading && (
-            <div className="p-4 text-center text-cyber-text-dim">
+            <div className="p-6 text-center text-white/50 text-sm">
               <div className="flex justify-center gap-1 mb-2">
-                <span className="h-2 w-2 rounded-full bg-cyber-cyan animate-bounce [animation-delay:0ms]" />
-                <span className="h-2 w-2 rounded-full bg-cyber-cyan animate-bounce [animation-delay:100ms]" />
-                <span className="h-2 w-2 rounded-full bg-cyber-cyan animate-bounce [animation-delay:200ms]" />
+                <span className="h-1.5 w-1.5 rounded-full bg-[#5865F2] animate-bounce [animation-delay:0ms]" />
+                <span className="h-1.5 w-1.5 rounded-full bg-[#5865F2] animate-bounce [animation-delay:100ms]" />
+                <span className="h-1.5 w-1.5 rounded-full bg-[#5865F2] animate-bounce [animation-delay:200ms]" />
               </div>
-              Searching...
+              Searching…
             </div>
           )}
 
           {!loading && query && results.length === 0 && (
-            <div className="p-8 text-center text-cyber-text-dim">
-              <p>No messages found</p>
+            <div className="p-8 text-center text-white/45 text-sm">
+              No messages found for "{query}"
             </div>
           )}
 
           {!loading && results.length > 0 && (
-            <div className="divide-y divide-cyber-border">
+            <div className="divide-y divide-white/5">
               {results.map((msg) => (
                 <button
                   key={msg._id}
                   onClick={() => onMessageClick?.(msg)}
-                  className="w-full p-4 text-left hover:bg-cyber-surface-light transition-colors"
+                  className="w-full px-4 py-3 text-left hover:bg-white/[0.04] transition"
                 >
                   <div className="flex items-start gap-3">
-                    <Avatar
-                      name={msg.sender.name}
-                      avatar={msg.sender.avatar}
-                      size="sm"
-                    />
+                    <Avatar name={msg.sender.name} avatar={msg.sender.avatar} size="sm" />
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className="text-sm font-semibold text-cyber-text truncate">
+                      <div className="flex items-center justify-between gap-2 mb-0.5">
+                        <span className="text-sm font-medium text-white truncate">
                           {msg.sender.name}
                         </span>
-                        <span className="text-[10px] text-cyber-text-dim flex-shrink-0">
+                        <span className="text-[10px] text-white/40 shrink-0">
                           {new Date(msg.createdAt).toLocaleDateString()}
                         </span>
                       </div>
-                      <p className="text-sm text-cyber-text-dim line-clamp-2">
+                      <p className="text-sm text-white/60 line-clamp-2">
                         {msg.content ? highlightMatch(msg.content, query) : "[Media]"}
                       </p>
                     </div>
@@ -135,11 +125,11 @@ const SearchPanel = ({ onClose, onMessageClick }: SearchPanelProps) => {
           )}
 
           {!query && (
-            <div className="p-8 text-center text-cyber-text-dim">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-12 h-12 mx-auto mb-3 opacity-30">
-                <path fillRule="evenodd" d="M10.5 3.75a6.75 6.75 0 100 13.5 6.75 6.75 0 000-13.5zM2.25 10.5a8.25 8.25 0 1114.59 5.28l4.69 4.69a.75.75 0 11-1.06 1.06l-4.69-4.69A8.25 8.25 0 012.25 10.5z" clipRule="evenodd" />
-              </svg>
-              <p>Type to search messages</p>
+            <div className="p-10 text-center text-white/45">
+              <div className="mx-auto grid place-items-center h-12 w-12 rounded-2xl bg-white/[0.05] border border-white/10 mb-3">
+                <Search className="h-5 w-5" />
+              </div>
+              <p className="text-sm">Type to search across all messages</p>
             </div>
           )}
         </div>

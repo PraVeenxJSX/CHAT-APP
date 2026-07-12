@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { X, Download } from "lucide-react";
 
 interface ImageLightboxProps {
   src: string;
@@ -16,21 +17,31 @@ const ImageLightbox = ({ src, onClose }: ImageLightboxProps) => {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm animate-[fade-in_0.2s_ease-out]"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md animate-[fade-in_0.2s_ease-out]"
       onClick={onClose}
     >
-      <button
-        onClick={onClose}
-        className="absolute top-4 right-4 h-10 w-10 rounded-full bg-cyber-surface border border-cyber-border flex items-center justify-center text-cyber-text hover:border-cyber-magenta hover:shadow-neon-magenta transition-all duration-300"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-          <path fillRule="evenodd" d="M5.47 5.47a.75.75 0 011.06 0L12 10.94l5.47-5.47a.75.75 0 111.06 1.06L13.06 12l5.47 5.47a.75.75 0 11-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 01-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 010-1.06z" clipRule="evenodd" />
-        </svg>
-      </button>
+      <div className="absolute top-4 right-4 flex gap-2">
+        <a
+          href={src}
+          download
+          onClick={(e) => e.stopPropagation()}
+          className="h-10 w-10 grid place-items-center rounded-full bg-white/[0.08] border border-white/15 text-white/85 hover:bg-white/[0.15] transition"
+          title="Download"
+        >
+          <Download className="h-4 w-4" />
+        </a>
+        <button
+          onClick={onClose}
+          className="h-10 w-10 grid place-items-center rounded-full bg-white/[0.08] border border-white/15 text-white/85 hover:bg-white/[0.15] transition"
+          title="Close"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
       <img
         src={src}
         alt="Full size"
-        className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg border border-cyber-border shadow-neon-cyan"
+        className="max-h-[90vh] max-w-[92vw] object-contain rounded-2xl shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       />
     </div>
