@@ -4,6 +4,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import { GoogleOAuthProvider } from "@react-oauth/google";
 import { AuthProvider } from "./context/AuthContext";
 import { SocketProvider } from "./context/SocketContext";
+import { CallProvider, useCall } from "./hooks/useCall";
+import CallUIHost from "./components/CallUIHost";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -59,11 +61,16 @@ export default function App() {
     <GoogleOAuthProvider clientId={googleClientId}>
       <AuthProvider>
         <SocketProvider>
-          <BrowserRouter>
-            <AnimatedRoutes />
-          </BrowserRouter>
+          <CallProvider>
+            <BrowserRouter>
+              <AnimatedRoutes />
+              <CallUIHost />
+            </BrowserRouter>
+          </CallProvider>
         </SocketProvider>
       </AuthProvider>
     </GoogleOAuthProvider>
   );
 }
+
+export { useCall };

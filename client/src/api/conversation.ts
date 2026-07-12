@@ -23,24 +23,99 @@ export const getOrCreateDirectConversation = async (
 export const createGroupConversation = async (
   name: string,
   participantIds: string[],
+  description: string | undefined,
   token: string
 ): Promise<Conversation> => {
   const res = await api.post<Conversation>(
     "/api/conversations/group",
-    { name, participantIds },
+    { name, participantIds, description },
     { headers: { Authorization: `Bearer ${token}` } }
   );
   return res.data;
 };
 
+export interface GroupUpdatePayload {
+  name?: string;
+  description?: string;
+  addParticipants?: string[];
+  removeParticipants?: string[];
+  onlyAdminsCanMessage?: boolean;
+  disappearingMessagesSeconds?: number;
+  avatar?: File;
+}
+
 export const updateGroupConversation = async (
   conversationId: string,
-  updates: { name?: string; addParticipants?: string[]; removeParticipants?: string[] },
+  updates: GroupUpdatePayload,
   token: string
 ): Promise<Conversation> => {
-  const res = await api.put<Conversation>(
-    `/api/conversations/${conversationId}`,
-    updates,
+  const hasAvatar = !!updates.avatar;
+  if (hasAvatar) {
+    const formData = new FormData();
+    if (updates.name !== undefined) formData.append("name", updates.name);
+    if (updates.description !== undefined) formData.append("description", updates.description);
+    if (updates.addParticipants) formData.append("addParticipants", JSON.stringify(updates.addParticipants));
+    if (updates.removeParticipants) formData.append("removeParticipants", JSON.stringify(updates.removeParticipants));
+    if (updates.onlyAdminsCanMessage !== undefined) {
+      formData.append("onlyAdminsCanMessage", String(updates.onlyAdminsCanMessage));
+    }
+    if (updates.disappearingMessagesSeconds !== undefined) {
+      formData.append("disappearingMessagesSeconds", String(updates.disappearingMessagesSeconds));
+    }
+    formData.append("avatar", updates.avatar as File);
+    const res = await api.put<Conversation>(`/api/conversations/${conversationId}`, formData, {
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "multipart/form-data" },
+    });
+    return res.data;
+  }
+  const res = await api.put<Conversation>(`/api/conversations/${conversationId}`, updates, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return res.data;
+};
+
+export const deleteGroupConversation = async (
+  conversationId: string,
+  token: string
+): Promise<void> => {
+  await api.delete(`/api/conversations/${conversationId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+};
+
+export const muteGroupConversation = async (
+  conversationId: string,
+  durationHours: number | null,
+  token: string
+): Promise<{ muted: boolean; until?: string }> => {
+  const res = await api.post<{ muted: boolean; until?: string }>(
+    `/api/conversations/${conversationId}/mute`,
+    { durationHours },
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  return res.data;
+};
+
+export const promoteAdmin = async (
+  conversationId: string,
+  userId: string,
+  token: string
+): Promise<Conversation> => {
+  const res = await api.post<Conversation>(
+    `/api/conversations/${conversationId}/admins/${userId}`,
+    {},
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  return res.data;
+};
+
+export const demoteAdmin = async (
+  conversationId: string,
+  userId: string,
+  token: string
+): Promise<Conversation> => {
+  const res = await api.delete<Conversation>(
+    `/api/conversations/${conversationId}/admins/${userId}`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   return res.data;

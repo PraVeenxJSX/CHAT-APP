@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useSocket } from "../context/SocketContext";
+import { useCall } from "../hooks/useCall";
 import { useChatMessages } from "../hooks/useChatMessages";
 import { useNotifications } from "../hooks/useNotifications";
 import { useUnreadCounts } from "../hooks/useUnreadCounts";
@@ -10,6 +11,10 @@ import {
   getOrCreateDirectConversation,
   createGroupConversation,
   updateGroupConversation,
+  deleteGroupConversation,
+  muteGroupConversation,
+  promoteAdmin,
+  demoteAdmin,
   leaveGroup,
 } from "../api/conversation";
 import ChatList from "../components/ChatList";
@@ -18,14 +23,16 @@ import MessageInput from "../components/MessageInput";
 import AISuggestions from "../components/AISuggestions";
 import SearchPanel from "../components/SearchPanel";
 import CreateGroupDialog from "../components/CreateGroupDialog";
-import GroupInfoPanel from "../components/GroupInfoPanel";
-import { Menu, Search, MoreVertical, Phone, Video, MessageSquare, Users } from "lucide-react";
+import GroupInfoPanel, { type GroupUpdateInfo } from "../components/GroupInfoPanel";
+import SettingsPanel from "../components/UserProfilePanel";
+import { Menu, Search, Settings as SettingsIcon, Phone, Video, MessageSquare, Users } from "lucide-react";
 import type { User, SendMessagePayload, Message, Conversation } from "../types";
 
 const Chat = () => {
-  const { logout, token, user } = useAuth();
+  const { token, user, logout } = useAuth();
   const { onlineUsers, typingUsers, sendMessage, emitTyping, emitStopTyping, addMessageListener } =
     useSocket();
+  const { startCall, active: activeCall } = useCall();
   const { requestPermission, showNotification } = useNotifications();
   const { incrementUnread, clearUnread, getUnreadCount } = useUnreadCounts();
 
@@ -38,6 +45,7 @@ const Chat = () => {
   const [showSearch, setShowSearch] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showGroupInfo, setShowGroupInfo] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const { messages, loading, setMessages } = useChatMessages(selectedConversation);
 
@@ -147,7 +155,7 @@ const Chat = () => {
     async (name: string, participantIds: string[]) => {
       if (!token) return;
       try {
-        const conv = await createGroupConversation(name, participantIds, token);
+        const conv = await createGroupConversation(name, participantIds, undefined, token);
         setShowCreateGroup(false);
         setConversations((prev) => [conv, ...prev]);
         setSelectedConversation(conv);
@@ -218,12 +226,21 @@ const Chat = () => {
 
   // Handle group operations
   const handleUpdateGroup = useCallback(
-    async (name: string) => {
+    async (updates: GroupUpdateInfo) => {
       if (!token || !selectedConversation) return;
       try {
+        const payload: Parameters<typeof updateGroupConversation>[1] = {};
+        if (updates.name !== undefined) payload.name = updates.name;
+        if (updates.description !== undefined) payload.description = updates.description;
+        if (updates.onlyAdminsCanMessage !== undefined)
+          payload.onlyAdminsCanMessage = updates.onlyAdminsCanMessage;
+        if (updates.disappearingMessagesSeconds !== undefined)
+          payload.disappearingMessagesSeconds = updates.disappearingMessagesSeconds;
+        if (updates.avatarFile) payload.avatar = updates.avatarFile;
+
         const updated = await updateGroupConversation(
           selectedConversation._id,
-          { name },
+          payload,
           token
         );
         setSelectedConversation(updated);
@@ -270,6 +287,74 @@ const Chat = () => {
     },
     [token, selectedConversation, refreshConversations]
   );
+
+  const handlePromoteAdmin = useCallback(
+    async (userId: string) => {
+      if (!token || !selectedConversation) return;
+      try {
+        const updated = await promoteAdmin(selectedConversation._id, userId, token);
+        setSelectedConversation(updated);
+        refreshConversations();
+      } catch (err) {
+        console.error("Failed to promote admin", err);
+      }
+    },
+    [token, selectedConversation, refreshConversations]
+  );
+
+  const handleDemoteAdmin = useCallback(
+    async (userId: string) => {
+      if (!token || !selectedConversation) return;
+      try {
+        const updated = await demoteAdmin(selectedConversation._id, userId, token);
+        setSelectedConversation(updated);
+        refreshConversations();
+      } catch (err) {
+        console.error("Failed to demote admin", err);
+      }
+    },
+    [token, selectedConversation, refreshConversations]
+  );
+
+  const handleMuteGroup = useCallback(
+    async (durationHours: number | null) => {
+      if (!token || !selectedConversation) return;
+      try {
+        const result = await muteGroupConversation(
+          selectedConversation._id,
+          durationHours,
+          token
+        );
+        if (selectedConversation) {
+          const others = selectedConversation.mutedMembers?.filter(
+            (m) => m.userId !== user?._id
+          ) || [];
+          if (result.muted && result.until) {
+            others.push({ userId: user!._id, until: result.until });
+          }
+          setSelectedConversation({
+            ...selectedConversation,
+            mutedMembers: others,
+          });
+        }
+      } catch (err) {
+        console.error("Failed to mute group", err);
+      }
+    },
+    [token, selectedConversation, user?._id]
+  );
+
+  const handleDeleteGroup = useCallback(async () => {
+    if (!token || !selectedConversation) return;
+    try {
+      await deleteGroupConversation(selectedConversation._id, token);
+      setSelectedConversation(null);
+      setShowGroupInfo(false);
+      refreshConversations();
+    } catch (err) {
+      console.error("Failed to delete group", err);
+    }
+  }, [token, selectedConversation, refreshConversations]);
 
   const handleLeaveGroup = useCallback(async () => {
     if (!token || !selectedConversation) return;
@@ -371,6 +456,9 @@ const Chat = () => {
         />
       )}
 
+      {/* Settings panel */}
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
+
       {/* Group info panel */}
       {showGroupInfo && selectedConversation?.type === "group" && user && (
         <GroupInfoPanel
@@ -381,7 +469,11 @@ const Chat = () => {
           onUpdate={handleUpdateGroup}
           onAddParticipants={handleAddParticipants}
           onRemoveParticipant={handleRemoveParticipant}
+          onPromoteAdmin={handlePromoteAdmin}
+          onDemoteAdmin={handleDemoteAdmin}
+          onMute={handleMuteGroup}
           onLeave={handleLeaveGroup}
+          onDelete={handleDeleteGroup}
         />
       )}
 
@@ -487,16 +579,56 @@ const Chat = () => {
 
           <div className="flex items-center gap-1">
             <button
-              className="hidden sm:grid h-9 w-9 place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition"
-              title="Voice call (coming soon)"
-              disabled={!selectedConversation}
+              className="hidden sm:grid h-9 w-9 place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30"
+              title="Voice call"
+              disabled={!selectedConversation || !!activeCall}
+              onClick={() => {
+                if (!selectedConversation || !user) return;
+                if (selectedConversation.type === "direct") {
+                  const partner = selectedPartner;
+                  if (partner) {
+                    startCall(
+                      { kind: "direct", partnerId: partner._id },
+                      "audio",
+                      { _id: partner._id, name: partner.name, avatar: partner.avatar }
+                    );
+                  }
+                } else {
+                  startCall(
+                    { kind: "group", conversationId: selectedConversation._id },
+                    "audio",
+                    undefined,
+                    selectedConversation.name
+                  );
+                }
+              }}
             >
               <Phone className="h-4 w-4" />
             </button>
             <button
-              className="hidden sm:grid h-9 w-9 place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition"
-              title="Video call (coming soon)"
-              disabled={!selectedConversation}
+              className="hidden sm:grid h-9 w-9 place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30"
+              title="Video call"
+              disabled={!selectedConversation || !!activeCall}
+              onClick={() => {
+                if (!selectedConversation || !user) return;
+                if (selectedConversation.type === "direct") {
+                  const partner = selectedPartner;
+                  if (partner) {
+                    startCall(
+                      { kind: "direct", partnerId: partner._id },
+                      "video",
+                      { _id: partner._id, name: partner.name, avatar: partner.avatar }
+                    );
+                  }
+                } else {
+                  startCall(
+                    { kind: "group", conversationId: selectedConversation._id },
+                    "video",
+                    undefined,
+                    selectedConversation.name
+                  );
+                }
+              }}
             >
               <Video className="h-4 w-4" />
             </button>
@@ -513,11 +645,18 @@ const Chat = () => {
                   setShowGroupInfo(true);
                 }
               }}
-              className="h-9 w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition"
-              title={selectedConversation?.type === "group" ? "Group info" : "Settings"}
+              className="h-9 w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Group info"
               disabled={selectedConversation?.type !== "group"}
             >
-              <MoreVertical className="h-4 w-4" />
+              <Users className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setShowSettings(true)}
+              className="h-9 w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition"
+              title="Settings"
+            >
+              <SettingsIcon className="h-4 w-4" />
             </button>
           </div>
         </div>

@@ -1,11 +1,17 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { jwtDecode } from "jwt-decode";
-
+import api from "../api/axios";
 
 interface User {
   _id: string;
   name: string;
+  username?: string;
   email: string;
+  avatar?: string;
+  statusMessage?: string;
+  dob?: string;
+  showDob?: boolean;
+  showOnlineStatus?: boolean;
 }
 
 interface DecodedToken {
@@ -19,6 +25,8 @@ interface AuthContextType {
   user: User | null;
   login: (token: string) => void;
   logout: () => void;
+  setUser: (u: User | null) => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -27,40 +35,49 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
 
-  /* ------------------ RESTORE SESSION ------------------ */
-  useEffect(() => {
+  const refreshUser = useCallback(async () => {
     const savedToken = localStorage.getItem("token");
-
-    if (savedToken) {
-      try {
-        const decoded = jwtDecode<DecodedToken>(savedToken);
-
-        setToken(savedToken);
-        setUser({
-          _id: decoded.id,
-          name: decoded.name,
-          email: decoded.email,
-        });
-      } catch {
-        localStorage.removeItem("token");
-      }
+    if (!savedToken) return;
+    try {
+      const res = await api.get<User>("/api/users/profile", {
+        headers: { Authorization: `Bearer ${savedToken}` },
+      });
+      setUser(res.data);
+    } catch {
+      const decoded = jwtDecode<DecodedToken>(savedToken);
+      setUser({
+        _id: decoded.id,
+        name: decoded.name,
+        email: decoded.email,
+      });
     }
   }, []);
 
-  /* ------------------ LOGIN ------------------ */
+  useEffect(() => {
+    const savedToken = localStorage.getItem("token");
+    if (!savedToken) return;
+    try {
+      const decoded = jwtDecode<DecodedToken>(savedToken);
+      setToken(savedToken);
+      setUser({
+        _id: decoded.id,
+        name: decoded.name,
+        email: decoded.email,
+      });
+      refreshUser();
+    } catch {
+      localStorage.removeItem("token");
+    }
+  }, [refreshUser]);
+
   const login = (token: string) => {
     const decoded = jwtDecode<DecodedToken>(token);
-
     localStorage.setItem("token", token);
     setToken(token);
-    setUser({
-      _id: decoded.id,
-      name: decoded.name,
-      email: decoded.email,
-    });
+    setUser({ _id: decoded.id, name: decoded.name, email: decoded.email });
+    refreshUser();
   };
 
-  /* ------------------ LOGOUT ------------------ */
   const logout = () => {
     localStorage.removeItem("token");
     setToken(null);
@@ -68,7 +85,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ token, user, login, logout }}>
+    <AuthContext.Provider value={{ token, user, login, logout, setUser, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
@@ -76,9 +93,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error("useAuth must be used inside AuthProvider");
-  }
+  if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
   return ctx;
 };
 export default AuthContext;

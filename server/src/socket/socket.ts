@@ -105,11 +105,25 @@ export const setupSocket = (io: Server) => {
       "sendMessage",
       async ({ receiver, conversationId, content, type = "text", fileUrl, fileType }: SendMessagePayload) => {
         let message;
-        
+
         if (conversationId) {
           // Group message
           const conversation = await Conversation.findById(conversationId).populate("participants");
           if (!conversation) return;
+
+          if (conversation.type === "group" && conversation.onlyAdminsCanMessage) {
+            const isAllowed = (id: string) =>
+              conversation.admin?.toString() === id ||
+              (Array.isArray(conversation.admins) &&
+                conversation.admins.some((a: any) => a.toString() === id));
+            if (!isAllowed(userId)) {
+              socket.emit("sendMessageError", {
+                conversationId,
+                message: "Only admins can send messages in this group",
+              });
+              return;
+            }
+          }
 
           message = await Message.create({
             sender: userId,
@@ -258,6 +272,198 @@ export const setupSocket = (io: Server) => {
         receiverId: userId,
       });
     });
+
+    /* ------------------ CALL SIGNALING ------------------ */
+    type CallTarget =
+      | { kind: "direct"; partnerId: string }
+      | { kind: "group"; conversationId: string };
+
+    /* call:invite — caller rings one or many, server fans out invite to each */
+    socket.on(
+      "call:invite",
+      async (
+        payload: {
+          callId: string;
+          type: "audio" | "video";
+          target: CallTarget;
+          caller: { _id: string; name: string; avatar?: string };
+        },
+        ack?: (response: { ok: boolean; recipients: string[] }) => void
+      ) => {
+        try {
+          let recipients: string[] = [];
+          if (payload.target.kind === "direct") {
+            recipients = [payload.target.partnerId];
+          } else {
+            const conv = await Conversation.findById(payload.target.conversationId);
+            if (!conv) {
+              ack?.({ ok: false, recipients: [] });
+              return;
+            }
+            recipients = conv.participants
+              .map((p: any) => p.toString())
+              .filter((id: string) => id !== userId);
+          }
+          recipients.forEach((rid) => {
+            io.to(rid).emit("call:invite", {
+              callId: payload.callId,
+              type: payload.type,
+              conversationId:
+                payload.target.kind === "group"
+                  ? payload.target.conversationId
+                  : undefined,
+              fromUserId: userId,
+              caller: payload.caller,
+            });
+          });
+          ack?.({ ok: true, recipients });
+        } catch (err) {
+          console.error("call:invite error:", err);
+          ack?.({ ok: false, recipients: [] });
+        }
+      }
+    );
+
+    /* call:cancel — caller withdraws before anyone accepts */
+    socket.on("call:cancel", ({ callId, recipients }: { callId: string; recipients: string[] }) => {
+      const list = recipients || [];
+      list.forEach((rid) => io.to(rid).emit("call:cancel", { callId }));
+    });
+
+    /* call:accept — recipient accepts; broadcast so caller and group peers can begin SDP */
+    socket.on(
+      "call:accept",
+      ({
+        callId,
+        conversationId,
+        acceptedBy,
+      }: {
+        callId: string;
+        conversationId?: string;
+        acceptedBy: { _id: string; name: string; avatar?: string };
+      }) => {
+        const event = { callId, acceptedBy };
+        if (conversationId) {
+          io.to(conversationId).emit("call:accept", event);
+        } else {
+          io.emit("call:accept", event);
+        }
+      }
+    );
+
+    /* call:reject — recipient declines */
+    socket.on(
+      "call:reject",
+      ({ callId, to, reason }: { callId: string; to?: string; reason?: string }) => {
+        if (to) {
+          io.to(to).emit("call:reject", { callId, by: userId, reason });
+        }
+      }
+    );
+
+    /* call:busy — recipient already in another call */
+    socket.on("call:busy", ({ callId, to }: { callId: string; to: string }) => {
+      if (to) io.to(to).emit("call:busy", { callId, by: userId });
+    });
+
+    /* call:offer — SDP offer (mesh) */
+    socket.on(
+      "call:offer",
+      ({
+        callId,
+        to,
+        from,
+        sdp,
+      }: {
+        callId: string;
+        to: string;
+        from: string;
+        sdp: RTCSessionDescriptionInit;
+      }) => {
+        io.to(to).emit("call:offer", { callId, to, from, sdp });
+      }
+    );
+
+    /* call:answer — SDP answer */
+    socket.on(
+      "call:answer",
+      ({
+        callId,
+        to,
+        from,
+        sdp,
+      }: {
+        callId: string;
+        to: string;
+        from: string;
+        sdp: RTCSessionDescriptionInit;
+      }) => {
+        io.to(to).emit("call:answer", { callId, to, from, sdp });
+      }
+    );
+
+    /* call:ice — candidate exchange */
+    socket.on(
+      "call:ice",
+      ({
+        callId,
+        to,
+        from,
+        candidate,
+      }: {
+        callId: string;
+        to: string;
+        from: string;
+        candidate: RTCIceCandidateInit;
+      }) => {
+        io.to(to).emit("call:ice", { callId, to, from, candidate });
+      }
+    );
+
+    /* call:toggle — mic/cam state broadcast so UI shows it */
+    socket.on(
+      "call:toggle",
+      ({
+        callId,
+        kind,
+        enabled,
+        to,
+        conversationId,
+      }: {
+        callId: string;
+        kind: "mic" | "cam";
+        enabled: boolean;
+        to?: string;
+        conversationId?: string;
+      }) => {
+        const event = { callId, from: userId, kind, enabled };
+        if (conversationId) {
+          io.to(conversationId).emit("call:toggle", event);
+        } else if (to) {
+          io.to(to).emit("call:toggle", event);
+        }
+      }
+    );
+
+    /* call:hangup — end the call for everyone in scope */
+    socket.on(
+      "call:hangup",
+      ({
+        callId,
+        to,
+        conversationId,
+      }: {
+        callId: string;
+        to?: string;
+        conversationId?: string;
+      }) => {
+        const event = { callId, by: userId };
+        if (conversationId) {
+          io.to(conversationId).emit("call:hangup", event);
+        }
+        if (to) io.to(to).emit("call:hangup", event);
+      }
+    );
 
     /* ------------------ OFFLINE ------------------ */
     socket.on("disconnect", () => {
