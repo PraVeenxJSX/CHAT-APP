@@ -136,15 +136,8 @@ export const getConversationMessages = async (req: AuthRequest, res: Response) =
   try {
     const userId = req.user!._id?.toString();
     const { conversationId } = req.params;
-    console.log("[getConversationMessages]", {
-      conversationId,
-      userId,
-      userFromToken: req.user?._id?.toString(),
-      decodedFromHeader: (req as any).userId,
-    });
 
     const conversation = await Conversation.findById(conversationId);
-    console.log("[getConversationMessages] doc found:", !!conversation, "participants:", conversation?.participants?.map?.((x: any) => x.toString()));
 
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
@@ -153,7 +146,6 @@ export const getConversationMessages = async (req: AuthRequest, res: Response) =
     const isParticipant = conversation.participants.some(
       (p) => p.toString() === userId
     );
-    console.log("[getConversationMessages] isParticipant:", isParticipant);
     if (!isParticipant) {
       return res.status(403).json({ message: "Not a participant" });
     }

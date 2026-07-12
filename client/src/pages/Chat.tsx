@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useSocket } from "../context/SocketContext";
 import { useChatMessages } from "../hooks/useChatMessages";
@@ -20,7 +20,6 @@ import SearchPanel from "../components/SearchPanel";
 import CreateGroupDialog from "../components/CreateGroupDialog";
 import GroupInfoPanel from "../components/GroupInfoPanel";
 import { Menu, Search, MoreVertical, Phone, Video, MessageSquare, Users } from "lucide-react";
-import api from "../api/axios";
 import type { User, SendMessagePayload, Message, Conversation } from "../types";
 
 const Chat = () => {
@@ -37,15 +36,8 @@ const Chat = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showGroupInfo, setShowGroupInfo] = useState(false);
-  const [username, setUsername] = useState("");
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [dob, setDob] = useState("");
-  const [showOnlineStatus, setShowOnlineStatus] = useState(false);
-  const [saving, setSaving] = useState(false);
 
   const { messages, loading, setMessages } = useChatMessages(selectedConversation);
 
@@ -87,11 +79,6 @@ const Chat = () => {
     fetchUsers(token).then(setUsers);
     fetchConversations(token).then(setConversations);
   }, [token]);
-
-  // Initialize username based on logged-in user
-  useEffect(() => {
-    if (user) setUsername(user.name);
-  }, [user]);
 
   // Listen for incoming messages for notifications + unread counts
   useEffect(() => {
@@ -224,25 +211,6 @@ const Chat = () => {
   const handleStopTyping = useCallback(() => {
     if (selectedPartner) emitStopTyping(selectedPartner._id);
   }, [selectedPartner, emitStopTyping]);
-
-  const handleSaveSettings = async () => {
-    if (!token) return;
-    setSaving(true);
-    try {
-      const formData = new FormData();
-      formData.append("name", username.trim());
-      if (dob) formData.append("dob", dob);
-      formData.append("statusMessage", showOnlineStatus ? "online" : "offline");
-      await api.put("/api/users/profile", formData, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setShowSettings(false);
-    } catch (err) {
-      console.error("Failed to update profile", err);
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handleAISuggestion = useCallback((text: string) => {
     setNewMessage(text);
@@ -543,12 +511,11 @@ const Chat = () => {
               onClick={() => {
                 if (selectedConversation?.type === "group") {
                   setShowGroupInfo(true);
-                } else {
-                  setShowSettings(true);
                 }
               }}
               className="h-9 w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition"
               title={selectedConversation?.type === "group" ? "Group info" : "Settings"}
+              disabled={selectedConversation?.type !== "group"}
             >
               <MoreVertical className="h-4 w-4" />
             </button>
