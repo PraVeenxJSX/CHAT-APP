@@ -81,6 +81,7 @@ export function useWebRTC(args: {
         if (!entry.tracksAttached) {
           stream.getTracks().forEach((t) => {
             if (!entry.pc.getSenders().some((s) => s.track && s.track.id === t.id)) {
+              t.enabled = true;
               entry.pc.addTrack(t, stream);
             }
           });
@@ -130,7 +131,9 @@ export function useWebRTC(args: {
         return existing.pc;
       }
 
-      const pc = new RTCPeerConnection({ iceServers });
+      const pc = new RTCPeerConnection({
+        iceServers,
+      });
       const remoteStream = new MediaStream();
       const entry: PeerEntry = {
         pc,
@@ -145,6 +148,13 @@ export function useWebRTC(args: {
         tracksAttached: false,
       };
       peersRef.current.set(peerId, entry);
+
+      pc.addTransceiver("audio", { direction: "sendrecv" });
+      if (type === "video") {
+        pc.addTransceiver("video", {
+          direction: "sendrecv",
+        });
+      }
 
       pc.ontrack = (ev) => {
         const track = ev.track;
@@ -173,7 +183,6 @@ export function useWebRTC(args: {
           if (entry.ignoreOffer) return;
           if (!entry.impolite) return;
           if (pc.signalingState !== "stable") return;
-          if (!entry.tracksAttached) return;
           entry.makingOffer = true;
           await pc.setLocalDescription(await pc.createOffer());
           signaling.sendOffer(peerId, pc.localDescription as RTCSessionDescriptionInit);
@@ -187,6 +196,7 @@ export function useWebRTC(args: {
       const attachLocalTracks = (stream: MediaStream) => {
         stream.getTracks().forEach((t) => {
           if (!entry.pc.getSenders().some((s) => s.track && s.track.id === t.id)) {
+            t.enabled = true;
             entry.pc.addTrack(t, stream);
           }
         });

@@ -39,8 +39,12 @@ const CallModal = () => {
   }, [active]);
 
   useEffect(() => {
-    if (localVideoRef.current && media.local.stream) {
-      localVideoRef.current.srcObject = media.local.stream;
+    const v = localVideoRef.current;
+    if (v && media.local.stream && v.srcObject !== media.local.stream) {
+      v.srcObject = media.local.stream;
+      v.muted = true;
+      v.playsInline = true;
+      v.play().catch(() => {});
     }
   }, [media.local.stream]);
 
@@ -49,11 +53,12 @@ const CallModal = () => {
       const vEl = remoteRefs.current.get(r.userId);
       if (vEl && vEl.srcObject !== r.stream) {
         vEl.srcObject = r.stream;
+        vEl.muted = true;
+        vEl.playsInline = true;
         vEl.play().catch(() => {});
       } else if (vEl && vEl.paused) {
         vEl.play().catch(() => {});
       }
-      // Ensure audio tracks play
       const aEl = remoteAudioRefs.current.get(r.userId);
       if (aEl && aEl.srcObject !== r.stream) {
         aEl.srcObject = r.stream;
@@ -62,8 +67,7 @@ const CallModal = () => {
         aEl.play().catch(() => {});
       }
     });
-    // Clean up removed remotes
-    const currentIds = new Set(media.remotes.map(r => r.userId));
+    const currentIds = new Set(media.remotes.map((r) => r.userId));
     remoteRefs.current.forEach((_, id) => {
       if (!currentIds.has(id)) {
         remoteRefs.current.delete(id);
