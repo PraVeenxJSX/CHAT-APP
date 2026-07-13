@@ -171,6 +171,7 @@ export function useWebRTC(args: {
       pc.onnegotiationneeded = async () => {
         try {
           if (entry.ignoreOffer) return;
+          if (!entry.impolite) return;
           if (pc.signalingState !== "stable") return;
           if (!entry.tracksAttached) return;
           entry.makingOffer = true;
@@ -247,15 +248,13 @@ export function useWebRTC(args: {
       const offerCollision =
         sdp.type === "offer" &&
         (entry.makingOffer || pc.signalingState !== "stable");
-      
-      const ignoreOffer = entry.impolite && offerCollision;
-      if (ignoreOffer) {
-        entry.ignoreOffer = true;
-        return;
-      }
+
+      /* Impolite peer wins collisions. Polite peer rolls back. */
+      const polite = !entry.impolite;
+      const ignoreOffer = polite && offerCollision;
+      entry.ignoreOffer = ignoreOffer;
 
       try {
-        entry.ignoreOffer = false;
         if (offerCollision) {
           await pc.setLocalDescription({
             type: "rollback",
@@ -276,6 +275,7 @@ export function useWebRTC(args: {
           await pc.setLocalDescription(await pc.createAnswer());
           signaling.sendAnswer(from, pc.localDescription as RTCSessionDescriptionInit);
         }
+        entry.ignoreOffer = false;
         upsertRemote(from);
       } catch (err) {
         console.error("handleRemoteOffer error", err);
