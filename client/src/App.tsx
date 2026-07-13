@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { GoogleOAuthProvider } from "@react-oauth/google";
@@ -12,7 +12,7 @@ import Register from "./pages/Register";
 import Chat from "./pages/Chat";
 import ProtectedRoute from "./components/ProtectedRoute";
 
-const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 
 function Fade({ children }: { children: React.ReactNode }) {
   return (
@@ -57,6 +57,34 @@ function AnimatedRoutes() {
 }
 
 export default function App() {
+  const googleClientId = useMemo(() => GOOGLE_CLIENT_ID, []);
+
+  useEffect(() => {
+    return () => {
+      try {
+        const w = window as unknown as { google?: { accounts?: { id?: { cancel?: () => void } } } };
+        w.google?.accounts?.id?.cancel?.();
+      } catch {
+        /* noop */
+      }
+    };
+  }, []);
+
+  if (!googleClientId) {
+    return (
+      <AuthProvider>
+        <SocketProvider>
+          <CallProvider>
+            <BrowserRouter>
+              <AnimatedRoutes />
+              <CallUIHost />
+            </BrowserRouter>
+          </CallProvider>
+        </SocketProvider>
+      </AuthProvider>
+    );
+  }
+
   return (
     <GoogleOAuthProvider clientId={googleClientId}>
       <AuthProvider>
