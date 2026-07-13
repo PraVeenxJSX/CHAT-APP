@@ -49,6 +49,9 @@ const CallModal = () => {
       const vEl = remoteRefs.current.get(r.userId);
       if (vEl && vEl.srcObject !== r.stream) {
         vEl.srcObject = r.stream;
+        vEl.play().catch(() => {});
+      } else if (vEl && vEl.paused) {
+        vEl.play().catch(() => {});
       }
       // Ensure audio tracks play
       const aEl = remoteAudioRefs.current.get(r.userId);
@@ -306,6 +309,7 @@ const RemoteTile = ({
         <video
           ref={videoRef}
           autoPlay
+          muted
           playsInline
           className="absolute inset-0 h-full w-full object-cover"
         />

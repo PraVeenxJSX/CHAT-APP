@@ -56,6 +56,7 @@ export function useWebRTC(args: {
   const peersRef = useRef<Map<string, PeerEntry>>(new Map());
   const localStreamRef = useRef<MediaStream | null>(null);
   const pendingIce = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
+  const remoteDescApplied = useRef<Map<string, boolean>>(new Map());
 
   /* Acquire local media */
   const startLocalMedia = useCallback(async () => {
@@ -76,11 +77,12 @@ export function useWebRTC(args: {
       localStreamRef.current = stream;
       setLocal({ stream, micEnabled: true, camEnabled: type === "video" });
 
-      // Attach local tracks to any peers that were created before media was ready
       peersRef.current.forEach((entry) => {
         if (!entry.tracksAttached) {
           stream.getTracks().forEach((t) => {
-            entry.pc.addTrack(t, stream);
+            if (!entry.pc.getSenders().some((s) => s.track && s.track.id === t.id)) {
+              entry.pc.addTrack(t, stream);
+            }
           });
           entry.tracksAttached = true;
         }
@@ -145,10 +147,13 @@ export function useWebRTC(args: {
       peersRef.current.set(peerId, entry);
 
       pc.ontrack = (ev) => {
-        ev.streams[0].getTracks().forEach((t) => remoteStream.addTrack(t));
-        ev.streams[0].getTracks().forEach((t) => {
-          if (t.kind === "video") entry.hasVideo = true;
-        });
+        const track = ev.track;
+        if (!remoteStream.getTracks().some((t) => t.id === track.id)) {
+          remoteStream.addTrack(track);
+        }
+        if (track.kind === "video") {
+          entry.hasVideo = true;
+        }
         upsertRemote(peerId);
       };
 
@@ -162,12 +167,12 @@ export function useWebRTC(args: {
         console.log(`[WebRTC] ICE state for ${peerId}: ${pc.iceConnectionState}`);
       };
 
-      /* Perfect-negotiation: only the impolite peer initiates offers.
-          The polite peer waits for the offer and responds via handleRemoteOffer. */
+      /* Perfect-negotiation: both peers can negotiate. Collisions are handled in handleRemoteOffer. */
       pc.onnegotiationneeded = async () => {
         try {
-          if (!entry.impolite) return;
           if (entry.ignoreOffer) return;
+          if (pc.signalingState !== "stable") return;
+          if (!entry.tracksAttached) return;
           entry.makingOffer = true;
           await pc.setLocalDescription(await pc.createOffer());
           signaling.sendOffer(peerId, pc.localDescription as RTCSessionDescriptionInit);
@@ -178,12 +183,18 @@ export function useWebRTC(args: {
         }
       };
 
-      // Attach local media if already available
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((t) => {
-          pc.addTrack(t, localStreamRef.current as MediaStream);
+      const attachLocalTracks = (stream: MediaStream) => {
+        stream.getTracks().forEach((t) => {
+          if (!entry.pc.getSenders().some((s) => s.track && s.track.id === t.id)) {
+            entry.pc.addTrack(t, stream);
+          }
         });
         entry.tracksAttached = true;
+      };
+
+      // Attach local media if already available
+      if (localStreamRef.current) {
+        attachLocalTracks(localStreamRef.current);
       }
 
       upsertRemote(peerId);
@@ -208,6 +219,7 @@ export function useWebRTC(args: {
     });
     peersRef.current.clear();
     pendingIce.current.clear();
+    remoteDescApplied.current.clear();
     setLocal({ stream: null, micEnabled: false, camEnabled: false });
     setRemotes([]);
   }, []);
@@ -231,30 +243,26 @@ export function useWebRTC(args: {
         if (!e2) return;
         entry = e2;
       }
-      // After createPeer or fallback, `entry` is guaranteed set
       const pc = (entry as PeerEntry).pc;
       const offerCollision =
         sdp.type === "offer" &&
         (entry.makingOffer || pc.signalingState !== "stable");
-      // Perfect negotiation: ignore colliding offers if we are impolite
-      if (offerCollision) {
-        if (entry.impolite) {
-          entry.ignoreOffer = true;
-          try {
-            await pc.setLocalDescription({
-              type: "rollback",
-            } as RTCSessionDescriptionInit);
-          } catch {
-            /* noop */
-          }
-        } else {
-          // Polite: keep offer pending, return; we'll handle when free
-          return;
-        }
+      
+      const ignoreOffer = entry.impolite && offerCollision;
+      if (ignoreOffer) {
+        entry.ignoreOffer = true;
+        return;
       }
+
       try {
         entry.ignoreOffer = false;
+        if (offerCollision) {
+          await pc.setLocalDescription({
+            type: "rollback",
+          } as RTCSessionDescriptionInit);
+        }
         await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+        remoteDescApplied.current.set(from, true);
         const queued = pendingIce.current.get(from) || [];
         for (const cand of queued) {
           try {
@@ -281,7 +289,21 @@ export function useWebRTC(args: {
     const entry = peersRef.current.get(from);
     if (!entry) return;
     try {
+      if (entry.pc.signalingState !== "have-local-offer") {
+        console.warn("handleRemoteAnswer: signalingState is not have-local-offer, ignoring");
+        return;
+      }
       await entry.pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      remoteDescApplied.current.set(from, true);
+      const queued = pendingIce.current.get(from) || [];
+      for (const cand of queued) {
+        try {
+          await entry.pc.addIceCandidate(new RTCIceCandidate(cand));
+        } catch {
+          /* noop */
+        }
+      }
+      pendingIce.current.delete(from);
       entry.ignoreOffer = false;
       upsertRemote(from);
     } catch (err) {
@@ -298,6 +320,12 @@ export function useWebRTC(args: {
       return;
     }
     try {
+      if (!entry.pc.remoteDescription || !remoteDescApplied.current.get(from)) {
+        const list = pendingIce.current.get(from) || [];
+        list.push(candidate);
+        pendingIce.current.set(from, list);
+        return;
+      }
       await entry.pc.addIceCandidate(new RTCIceCandidate(candidate));
     } catch (err) {
       console.error("addIceCandidate error", err);
@@ -357,11 +385,14 @@ export function useWebRTC(args: {
         .getUserMedia({ video: true })
         .then((s) => {
           if (!localStreamRef.current) return;
-          // Add new video tracks to local stream and all peers
           s.getVideoTracks().forEach((t) => {
             localStreamRef.current!.addTrack(t);
             peersRef.current.forEach((peer) => {
-              peer.pc.addTrack(t, localStreamRef.current as MediaStream);
+              if (!peer.pc.getSenders().some((st) => st.track && st.track.id === t.id)) {
+                if (peer.pc.signalingState === "stable" || peer.pc.signalingState === "have-local-offer") {
+                  peer.pc.addTrack(t, localStreamRef.current as MediaStream);
+                }
+              }
             });
           });
           setLocal((prev) => ({ ...prev, stream: localStreamRef.current, camEnabled: true }));
