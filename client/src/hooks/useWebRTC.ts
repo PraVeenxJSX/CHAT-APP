@@ -60,7 +60,11 @@ export function useWebRTC(args: {
     if (localStreamRef.current) return;
     try {
       const constraints: MediaStreamConstraints = {
-        audio: true,
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
         video:
           type === "video"
             ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" }

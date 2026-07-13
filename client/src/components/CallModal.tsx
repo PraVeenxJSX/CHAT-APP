@@ -22,24 +22,21 @@ const formatDuration = (secs: number) => {
 const CallModal = () => {
   const { active, media, toggleMic, toggleCam, hangup } = useCall();
   const [elapsed, setElapsed] = useState(0);
-  const [now, setNow] = useState(Date.now());
   const [minimized, setMinimized] = useState(false);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteRefs = useRef<Map<string, HTMLVideoElement | null>>(new Map());
+  const remoteAudioRefs = useRef<Map<string, HTMLAudioElement | null>>(new Map());
 
   useEffect(() => {
     if (!active) return;
-    const id = setInterval(() => setNow(Date.now()), 500);
+    const id = setInterval(() => {
+      if (active.startedAt) {
+        setElapsed(Math.floor((Date.now() - active.startedAt) / 1000));
+      }
+    }, 500);
     return () => clearInterval(id);
   }, [active]);
-
-  useEffect(() => {
-    if (!active || active.status === "ended") return;
-    if (active.startedAt) {
-      setElapsed(Math.floor((now - active.startedAt) / 1000));
-    }
-  }, [now, active]);
 
   useEffect(() => {
     if (localVideoRef.current && media.local.stream) {
@@ -49,9 +46,15 @@ const CallModal = () => {
 
   useEffect(() => {
     media.remotes.forEach((r) => {
-      const el = remoteRefs.current.get(r.userId);
-      if (el && el.srcObject !== r.stream) {
-        el.srcObject = r.stream;
+      const vEl = remoteRefs.current.get(r.userId);
+      if (vEl && vEl.srcObject !== r.stream) {
+        vEl.srcObject = r.stream;
+      }
+      // Ensure audio tracks play
+      const aEl = remoteAudioRefs.current.get(r.userId);
+      if (aEl && aEl.srcObject !== r.stream) {
+        aEl.srcObject = r.stream;
+        aEl.play().catch(() => {});
       }
     });
   }, [media.remotes]);
@@ -144,6 +147,9 @@ const CallModal = () => {
                   micEnabled={r.micEnabled}
                   videoRef={(el) => {
                     remoteRefs.current.set(r.userId, el);
+                  }}
+                  audioRef={(el) => {
+                    remoteAudioRefs.current.set(r.userId, el);
                   }}
                 />
               ))}
@@ -260,11 +266,13 @@ const RemoteTile = ({
   hasVideo,
   micEnabled,
   videoRef,
+  audioRef,
 }: {
   name: string;
   hasVideo: boolean;
   micEnabled: boolean;
   videoRef: (el: HTMLVideoElement | null) => void;
+  audioRef: (el: HTMLAudioElement | null) => void;
 }) => {
   return (
     <div className="relative aspect-video rounded-2xl overflow-hidden border border-white/10 bg-gradient-to-br from-[#1d1f29] to-[#0c0d12]">
@@ -285,6 +293,8 @@ const RemoteTile = ({
           </div>
         </div>
       )}
+      {/* Audio element for remote audio (always needed for both audio/video calls) */}
+      <audio ref={audioRef} autoPlay playsInline className="hidden" />
       <div className="absolute bottom-2 left-2 px-2 py-1 rounded-lg bg-black/60 backdrop-blur text-xs text-white/90 flex items-center gap-1.5">
         {micEnabled ? (
           <Mic className="h-3 w-3 text-emerald-400" />
