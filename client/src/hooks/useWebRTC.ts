@@ -47,6 +47,14 @@ export function useWebRTC(args: {
 }) {
   const { type, iceServers, callEnded, signaling } = args;
 
+  /* Keep a ref to the latest type so async functions (startLocalMedia, createPeer)
+     always read the FRESHEST type, even when called from stale closures (e.g.
+     acceptIncoming called before re-render with the new call-type completes). */
+  const typeRef = useRef<"audio" | "video">(type);
+  /* Update synchronously during render (NOT in useEffect) so that callers
+     that read typeRef.current on the same tick get the correct value. */
+  typeRef.current = type;
+
   const [local, setLocal] = useState<LocalMediaState>({
     stream: null,
     micEnabled: true,
@@ -58,9 +66,19 @@ export function useWebRTC(args: {
   const pendingIce = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const remoteDescApplied = useRef<Map<string, boolean>>(new Map());
 
-  /* Acquire local media */
-  const startLocalMedia = useCallback(async () => {
-    if (localStreamRef.current) return;
+  /* Acquire local media. Optionally pass a `forceType` to override the current
+     `typeRef.current` — useful when acceptIncoming is called before React commits
+     the new call type (which means `typeRef.current` is still "audio"). */
+  const startLocalMedia = useCallback(async (forceTypeOverride?: "audio" | "video") => {
+    const currentType = forceTypeOverride ?? typeRef.current;
+    if (localStreamRef.current) {
+      const wantsVideo = currentType === "video";
+      const hasVideo = localStreamRef.current.getVideoTracks().length > 0;
+      if (wantsVideo === hasVideo) return;
+      console.log(`[WebRTC] startLocalMedia: cached stream doesn't match type=${currentType}, re-acquiring`);
+      localStreamRef.current.getTracks().forEach((t) => t.stop());
+      localStreamRef.current = null;
+    }
     try {
       const constraints: MediaStreamConstraints = {
         audio: {
@@ -69,7 +87,7 @@ export function useWebRTC(args: {
           autoGainControl: true,
         },
         video:
-          type === "video"
+          currentType === "video"
             ? {
                 width: { min: 320, ideal: 1280, max: 1920 },
                 height: { min: 240, ideal: 720, max: 1080 },
@@ -79,9 +97,10 @@ export function useWebRTC(args: {
             : false,
       };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log(`[WebRTC] getUserMedia success — tracks:`, stream.getTracks().map(t => `${t.kind}(${t.id}) enabled=${t.enabled} readyState=${t.readyState}`));
+      console.log(`[WebRTC] getUserMedia success (type=${currentType}) — tracks:`,
+        stream.getTracks().map(t => `${t.kind}(${t.id}) enabled=${t.enabled} readyState=${t.readyState}`));
       localStreamRef.current = stream;
-      setLocal({ stream, micEnabled: true, camEnabled: type === "video" });
+      setLocal({ stream, micEnabled: true, camEnabled: currentType === "video" });
 
       peersRef.current.forEach((entry) => {
         if (!entry.tracksAttached) {
@@ -98,7 +117,7 @@ export function useWebRTC(args: {
       setLocal({ stream: null, micEnabled: false, camEnabled: false });
       throw err;
     }
-  }, [type]);
+  }, []);
 
   /* Broadcast remote entry to React state */
   const upsertRemote = (peerId: string) => {
@@ -141,12 +160,13 @@ export function useWebRTC(args: {
         iceServers,
       });
       const remoteStream = new MediaStream();
+      const currentType = typeRef.current;
       const entry: PeerEntry = {
         pc,
         name,
         remoteStream,
         micEnabled: true,
-        camEnabled: type === "video",
+        camEnabled: currentType === "video",
         hasVideo: false,
         impolite,
         makingOffer: false,
@@ -181,17 +201,24 @@ export function useWebRTC(args: {
         console.log(`[WebRTC] Connection state for ${peerId}: ${pc.connectionState}`);
       };
 
-      /* Perfect-negotiation: only the impolite peer initiates offers. */
+      /* Perfect-negotiation: only the impolite peer initiates offers.
+         CRITICAL: Wait until ALL local tracks (audio+video) are attached
+         before creating the offer, so the offer includes m=video. */
       pc.onnegotiationneeded = async () => {
         try {
           if (entry.ignoreOffer) return;
           if (!entry.impolite) return;
           if (pc.signalingState !== "stable") return;
-          console.log(`[WebRTC] onnegotiationneeded for ${peerId}, creating offer`);
+          if (!entry.tracksAttached) {
+            console.log(`[WebRTC] onnegotiationneeded for ${peerId} SKIPPED — tracks not attached yet`);
+            return;
+          }
+          console.log(`[WebRTC] onnegotiationneeded for ${peerId}, creating offer. Senders:`,
+            pc.getSenders().map(s => s.track ? `${s.track.kind}(${s.track.id})` : `null`));
           entry.makingOffer = true;
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
-          console.log(`[WebRTC] offer sdp first 200 chars:`, (offer.sdp || "").slice(0, 200));
+          console.log(`[WebRTC] offer sdp first 500 chars:`, (offer.sdp || "").slice(0, 500));
           signaling.sendOffer(peerId, pc.localDescription as RTCSessionDescriptionInit);
         } catch (err) {
           console.error("onnegotiationneeded error", err);
@@ -226,7 +253,7 @@ export function useWebRTC(args: {
       return pc;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [iceServers, signaling, type]
+    [iceServers, signaling]
   );
 
   /* Stop everything */
@@ -293,9 +320,12 @@ export function useWebRTC(args: {
             type: "rollback",
           } as RTCSessionDescriptionInit);
         }
+        console.log(`[WebRTC] incoming offer sdp:`, sdp.sdp);
         await pc.setRemoteDescription(new RTCSessionDescription(sdp));
         remoteDescApplied.current.set(from, true);
-        console.log(`[WebRTC] setRemoteDescription done for ${from}`);
+        console.log(`[WebRTC] setRemoteDescription done for ${from}. Senders:`,
+          pc.getSenders().map(s => s.track ? `${s.track.kind}(${s.track.id})` : `null`));
+        console.log(`[WebRTC] Receivers:`, pc.getReceivers().map(r => r.track ? `${r.track.kind}(${r.track.id})` : `null`));
         const queued = pendingIce.current.get(from) || [];
         for (const cand of queued) {
           try {
@@ -307,7 +337,7 @@ export function useWebRTC(args: {
         pendingIce.current.delete(from);
         if (sdp.type === "offer") {
           const answer = await pc.createAnswer();
-          console.log(`[WebRTC] answer sdp first 200 chars:`, (answer.sdp || "").slice(0, 200));
+          console.log(`[WebRTC] full answer sdp:`, answer.sdp);
           await pc.setLocalDescription(answer);
           signaling.sendAnswer(from, pc.localDescription as RTCSessionDescriptionInit);
         }
@@ -370,10 +400,44 @@ export function useWebRTC(args: {
 
   /* Manually register a peer: caller-side, called when call:accept arrives */
   const addPeer = useCallback(
-    (peerId: string, name: string, impolite: boolean) => {
-      return createPeer(peerId, name, impolite);
+    (peerId: string, name: string, impolite: boolean, typeOverride?: "audio" | "video") => {
+      if (typeOverride) {
+        typeRef.current = typeOverride;
+      }
+      const pc = createPeer(peerId, name, impolite);
+      /* For impolite peers (the one initiating offers), if tracks are attached
+         by the time addPeer runs, kick off negotiation explicitly instead of
+         relying on onnegotiationneeded (which may have already fired during
+         addTrack synchronously and been queued for a microtask BEFORE both
+         audio+video tracks were attached in some edge cases). */
+      if (pc && impolite) {
+        const entry = peersRef.current.get(peerId);
+        if (entry && entry.tracksAttached && pc.signalingState === "stable") {
+          console.log(`[WebRTC] addPeer (impolite): explicitly triggering offer for ${peerId}`);
+          queueMicrotask(async () => {
+            try {
+              if (entry.ignoreOffer) return;
+              if (pc.signalingState !== "stable") return;
+              console.log(`[WebRTC] explicit onnegotiation for ${peerId}. Senders:`,
+                pc.getSenders().map(s => s.track ? `${s.track.kind}(${s.track.id})` : `null`));
+              entry.makingOffer = true;
+              const offer = await pc.createOffer();
+              await pc.setLocalDescription(offer);
+              console.log(`[WebRTC] explicit offer sdp first 500 chars:`, (offer.sdp || "").slice(0, 500));
+              signaling.sendOffer(peerId, pc.localDescription as RTCSessionDescriptionInit);
+            } catch (err) {
+              console.error("explicit onnegotiation error", err);
+            } finally {
+              entry.makingOffer = false;
+            }
+          });
+        } else {
+          console.log(`[WebRTC] addPeer (impolite): tracks NOT attached yet for ${peerId}, deferring to onnegotiationneeded`);
+        }
+      }
+      return pc;
     },
-    [createPeer]
+    [createPeer, signaling]
   );
 
   const updateRemoteState = useCallback(

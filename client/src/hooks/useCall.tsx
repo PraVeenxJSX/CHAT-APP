@@ -324,7 +324,7 @@ export const CallProviderInner = ({
   useEffect(() => {
     if (!active) return;
     if (active.status === "ended") return;
-    webRTC.startLocalMedia().catch((err) => {
+    webRTC.startLocalMedia(active.type).catch((err) => {
       console.error("getUserMedia failed", err);
       endCallWith("media-failed");
     });
@@ -413,15 +413,19 @@ export const CallProviderInner = ({
     // Start local media FIRST, then create the peer
     // (useEffect on active?.callId will also call startLocalMedia, but we need it here
     //  to ensure tracks are attached before createPeer triggers onnegotiationneeded)
+    // CRITICAL: pass incoming.type explicitly, because React may NOT have re-rendered
+    // with the new `active.type` yet — so useWebRTC's internal `typeRef.current`
+    // would still be the previous ("audio") value at the time startLocalMedia runs.
     try {
-      await webRTCRef.current?.startLocalMedia();
+      await webRTCRef.current?.startLocalMedia(incoming.type);
     } catch (err) {
       console.error("Failed to acquire media for incoming call", err);
       // Still try to proceed — peer will be created without tracks
     }
 
-    /* Callee becomes impolite (initiates the offer). */
-    webRTCRef.current?.addPeer(caller._id, caller.name, true);
+    /* Callee becomes impolite (initiates the offer). Pass type explicitly
+       so createPeer uses the correct type for camEnabled and tracks. */
+    webRTCRef.current?.addPeer(caller._id, caller.name, true, incoming.type);
   }, [incoming, socket]);
 
   const rejectIncoming = useCallback(
