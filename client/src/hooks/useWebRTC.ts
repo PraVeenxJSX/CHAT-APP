@@ -70,10 +70,16 @@ export function useWebRTC(args: {
         },
         video:
           type === "video"
-            ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" }
+            ? {
+                width: { min: 320, ideal: 1280, max: 1920 },
+                height: { min: 240, ideal: 720, max: 1080 },
+                frameRate: { min: 15, ideal: 30, max: 60 },
+                facingMode: "user",
+              }
             : false,
       };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log(`[WebRTC] getUserMedia success — tracks:`, stream.getTracks().map(t => `${t.kind}(${t.id}) enabled=${t.enabled} readyState=${t.readyState}`));
       localStreamRef.current = stream;
       setLocal({ stream, micEnabled: true, camEnabled: type === "video" });
 
@@ -149,15 +155,9 @@ export function useWebRTC(args: {
       };
       peersRef.current.set(peerId, entry);
 
-      pc.addTransceiver("audio", { direction: "sendrecv" });
-      if (type === "video") {
-        pc.addTransceiver("video", {
-          direction: "sendrecv",
-        });
-      }
-
       pc.ontrack = (ev) => {
         const track = ev.track;
+        console.log(`[WebRTC] ontrack: kind=${track.kind} id=${track.id} readyState=${track.readyState}`);
         if (!remoteStream.getTracks().some((t) => t.id === track.id)) {
           remoteStream.addTrack(track);
         }
@@ -177,14 +177,21 @@ export function useWebRTC(args: {
         console.log(`[WebRTC] ICE state for ${peerId}: ${pc.iceConnectionState}`);
       };
 
-      /* Perfect-negotiation: both peers can negotiate. Collisions are handled in handleRemoteOffer. */
+      pc.onconnectionstatechange = () => {
+        console.log(`[WebRTC] Connection state for ${peerId}: ${pc.connectionState}`);
+      };
+
+      /* Perfect-negotiation: only the impolite peer initiates offers. */
       pc.onnegotiationneeded = async () => {
         try {
           if (entry.ignoreOffer) return;
           if (!entry.impolite) return;
           if (pc.signalingState !== "stable") return;
+          console.log(`[WebRTC] onnegotiationneeded for ${peerId}, creating offer`);
           entry.makingOffer = true;
-          await pc.setLocalDescription(await pc.createOffer());
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          console.log(`[WebRTC] offer sdp first 200 chars:`, (offer.sdp || "").slice(0, 200));
           signaling.sendOffer(peerId, pc.localDescription as RTCSessionDescriptionInit);
         } catch (err) {
           console.error("onnegotiationneeded error", err);
@@ -194,7 +201,14 @@ export function useWebRTC(args: {
       };
 
       const attachLocalTracks = (stream: MediaStream) => {
-        stream.getTracks().forEach((t) => {
+        /* Deterministic order: audio first, then video. */
+        stream.getAudioTracks().forEach((t) => {
+          if (!entry.pc.getSenders().some((s) => s.track && s.track.id === t.id)) {
+            t.enabled = true;
+            entry.pc.addTrack(t, stream);
+          }
+        });
+        stream.getVideoTracks().forEach((t) => {
           if (!entry.pc.getSenders().some((s) => s.track && s.track.id === t.id)) {
             t.enabled = true;
             entry.pc.addTrack(t, stream);
@@ -240,6 +254,14 @@ export function useWebRTC(args: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [callEnded]);
 
+  /* Diagnostic: expose pc/refs globally so user can inspect from DevTools */
+  useEffect(() => {
+    (window as unknown as { __debugPeers?: unknown }).__debugPeers = {
+      peers: peersRef.current,
+      iceServers,
+    };
+  }, [iceServers]);
+
   /* Receive offer from peer */
   const handleRemoteOffer = useCallback(
     async (from: string, name: string, sdp: RTCSessionDescriptionInit) => {
@@ -266,12 +288,14 @@ export function useWebRTC(args: {
 
       try {
         if (offerCollision) {
+          console.log(`[WebRTC] handleRemoteOffer collision for ${from} - polite=${polite}`);
           await pc.setLocalDescription({
             type: "rollback",
           } as RTCSessionDescriptionInit);
         }
         await pc.setRemoteDescription(new RTCSessionDescription(sdp));
         remoteDescApplied.current.set(from, true);
+        console.log(`[WebRTC] setRemoteDescription done for ${from}`);
         const queued = pendingIce.current.get(from) || [];
         for (const cand of queued) {
           try {
@@ -282,7 +306,9 @@ export function useWebRTC(args: {
         }
         pendingIce.current.delete(from);
         if (sdp.type === "offer") {
-          await pc.setLocalDescription(await pc.createAnswer());
+          const answer = await pc.createAnswer();
+          console.log(`[WebRTC] answer sdp first 200 chars:`, (answer.sdp || "").slice(0, 200));
+          await pc.setLocalDescription(answer);
           signaling.sendAnswer(from, pc.localDescription as RTCSessionDescriptionInit);
         }
         entry.ignoreOffer = false;
