@@ -35,6 +35,8 @@ interface PeerEntry {
   /* True if we've begun the offer/answer exchange */
   makingOffer: boolean;
   ignoreOffer: boolean;
+  /* Whether local tracks have been added to this peer */
+  tracksAttached: boolean;
 }
 
 export function useWebRTC(args: {
@@ -73,6 +75,16 @@ export function useWebRTC(args: {
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       localStreamRef.current = stream;
       setLocal({ stream, micEnabled: true, camEnabled: type === "video" });
+
+      // Attach local tracks to any peers that were created before media was ready
+      peersRef.current.forEach((entry, peerId) => {
+        if (!entry.tracksAttached) {
+          stream.getTracks().forEach((t) => {
+            entry.pc.addTrack(t, stream);
+          });
+          entry.tracksAttached = true;
+        }
+      });
     } catch (err) {
       setLocal({ stream: null, micEnabled: false, camEnabled: false });
       throw err;
@@ -99,11 +111,14 @@ export function useWebRTC(args: {
     });
   };
 
-  /* Create a peer connection. impolite=true means this side owns offer creation. */
+  /* Create a peer connection. impolite=true means this side owns offer creation.
+     NOTE: This can now be called BEFORE local media is ready. Tracks will be attached
+     lazily when startLocalMedia() completes. */
   const createPeer = useCallback(
     (peerId: string, name: string, impolite: boolean) => {
-      if (!iceServers || !localStreamRef.current) return null;
-      // If peer already exists, respect existing impolite setting
+      if (!iceServers) return null;
+
+      // If peer already exists, respect existing connection
       const existing = peersRef.current.get(peerId);
       if (existing) {
         if (existing.name !== name) {
@@ -112,6 +127,7 @@ export function useWebRTC(args: {
         }
         return existing.pc;
       }
+
       const pc = new RTCPeerConnection({ iceServers });
       const remoteStream = new MediaStream();
       const entry: PeerEntry = {
@@ -124,6 +140,7 @@ export function useWebRTC(args: {
         impolite,
         makingOffer: false,
         ignoreOffer: false,
+        tracksAttached: false,
       };
       peersRef.current.set(peerId, entry);
 
@@ -139,6 +156,10 @@ export function useWebRTC(args: {
         if (ev.candidate) {
           signaling.sendIce(peerId, ev.candidate.toJSON());
         }
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        console.log(`[WebRTC] ICE state for ${peerId}: ${pc.iceConnectionState}`);
       };
 
       /* Perfect-negotiation: only the impolite peer initiates offers.
@@ -157,10 +178,13 @@ export function useWebRTC(args: {
         }
       };
 
-      // Attach local media once
-      localStreamRef.current.getTracks().forEach((t) => {
-        pc.addTrack(t, localStreamRef.current as MediaStream);
-      });
+      // Attach local media if already available
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((t) => {
+          pc.addTrack(t, localStreamRef.current as MediaStream);
+        });
+        entry.tracksAttached = true;
+      }
 
       upsertRemote(peerId);
       return pc;
@@ -196,7 +220,7 @@ export function useWebRTC(args: {
   /* Receive offer from peer */
   const handleRemoteOffer = useCallback(
     async (from: string, name: string, sdp: RTCSessionDescriptionInit) => {
-      if (!iceServers || !localStreamRef.current) return;
+      if (!iceServers) return;
       let entry = peersRef.current.get(from);
       if (!entry) {
         // We're receiving an offer — that means the *other* side is the impolite one,
@@ -319,10 +343,10 @@ export function useWebRTC(args: {
     const stream = localStreamRef.current;
     if (!stream) return;
     const tracks = stream.getAudioTracks();
-    const next = !local.micEnabled;
+    const next = !tracks[0]?.enabled;
     tracks.forEach((t) => (t.enabled = next));
     setLocal((prev) => ({ ...prev, micEnabled: next }));
-  }, [local.micEnabled]);
+  }, []);
 
   const toggleCam = useCallback(() => {
     const stream = localStreamRef.current;
@@ -333,23 +357,24 @@ export function useWebRTC(args: {
         .getUserMedia({ video: true })
         .then((s) => {
           if (!localStreamRef.current) return;
-          localStreamRef.current = s;
-          peersRef.current.forEach((peer) => {
-            s.getTracks().forEach((t) =>
-              peer.pc.addTrack(t, localStreamRef.current as MediaStream)
-            );
+          // Add new video tracks to local stream and all peers
+          s.getVideoTracks().forEach((t) => {
+            localStreamRef.current!.addTrack(t);
+            peersRef.current.forEach((peer) => {
+              peer.pc.addTrack(t, localStreamRef.current as MediaStream);
+            });
           });
-          setLocal({ stream: s, micEnabled: local.micEnabled, camEnabled: true });
+          setLocal((prev) => ({ ...prev, stream: localStreamRef.current, camEnabled: true }));
         })
         .catch(() => {
           /* noop */
         });
       return;
     }
-    const next = !local.camEnabled;
+    const next = !tracks[0]?.enabled;
     tracks.forEach((t) => (t.enabled = next));
     setLocal((prev) => ({ ...prev, camEnabled: next }));
-  }, [local.camEnabled, local.micEnabled]);
+  }, []);
 
   return {
     local,

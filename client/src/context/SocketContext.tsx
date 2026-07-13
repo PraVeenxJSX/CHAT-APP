@@ -51,7 +51,7 @@ interface SocketContextType {
     caller: { _id: string; name: string; avatar?: string };
   }) => Promise<{ ok: boolean; recipients: string[] }>;
   callCancel: (callId: string, recipients: string[]) => void;
-  callAccept: (callId: string, conversationId: string | undefined, acceptedBy: { _id: string; name: string; avatar?: string }) => void;
+  callAccept: (callId: string, conversationId: string | undefined, to: string | undefined, acceptedBy: { _id: string; name: string; avatar?: string }) => void;
   callReject: (callId: string, to: string, reason?: string) => void;
   callBusy: (callId: string, to: string) => void;
   callOffer: (p: { callId: string; to: string; from: string; sdp: RTCSessionDescriptionInit }) => void;
@@ -205,7 +205,7 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
         return;
       }
       s.emit(event, payload, (response: T) => resolve(response));
-      setTimeout(() => resolve(undefined as unknown as T), 1500);
+      setTimeout(() => resolve(undefined as unknown as T), 10000);
     });
 
   const callInvite: SocketContextType["callInvite"] = useCallback(
@@ -221,9 +221,10 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
     (
       callId: string,
       conversationId: string | undefined,
+      to: string | undefined,
       acceptedBy: { _id: string; name: string; avatar?: string }
     ) => {
-      socketRef.current?.emit("call:accept", { callId, conversationId, acceptedBy });
+      socketRef.current?.emit("call:accept", { callId, conversationId, to, acceptedBy });
     },
     []
   );

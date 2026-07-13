@@ -51,7 +51,7 @@ export const setupSocket = (io: Server) => {
     }
   });
 
-  io.on("connection", (socket: AuthSocket) => {
+  io.on("connection", async (socket: AuthSocket) => {
     if (!socket.userId) return;
 
     const userId = socket.userId;
@@ -59,6 +59,14 @@ export const setupSocket = (io: Server) => {
 
     /* JOIN ROOM FOR THIS USER (so io.to(userId) works) */
     socket.join(userId);
+
+    /* JOIN ALL CONVERSATION ROOMS so group call events can be routed */
+    try {
+      const convos = await Conversation.find({ participants: userId }).select("_id");
+      convos.forEach((c) => socket.join(c._id.toString()));
+    } catch (err) {
+      console.error("Failed to join conversation rooms:", err);
+    }
 
     /* ------------------ ONLINE USERS ------------------ */
     onlineUsers.add(userId);
@@ -330,22 +338,30 @@ export const setupSocket = (io: Server) => {
       list.forEach((rid) => io.to(rid).emit("call:cancel", { callId }));
     });
 
-    /* call:accept — recipient accepts; broadcast so caller and group peers can begin SDP */
+    /* call:accept — recipient accepts; route to caller (direct) or conversation room (group) */
     socket.on(
       "call:accept",
       ({
         callId,
         conversationId,
+        to,
         acceptedBy,
       }: {
         callId: string;
         conversationId?: string;
+        to?: string;
         acceptedBy: { _id: string; name: string; avatar?: string };
       }) => {
         const event = { callId, acceptedBy };
         if (conversationId) {
-          io.to(conversationId).emit("call:accept", event);
+          // Group call — emit to the conversation room (sockets joined on connect)
+          socket.to(conversationId).emit("call:accept", event);
+        } else if (to) {
+          // Direct call — send only to the caller
+          io.to(to).emit("call:accept", event);
         } else {
+          // Fallback — should not happen, but emit to all as safety net
+          console.warn("call:accept missing both conversationId and to");
           io.emit("call:accept", event);
         }
       }

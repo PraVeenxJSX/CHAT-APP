@@ -615,38 +615,38 @@ const [showSearch, setShowSearch] = useState(false);
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             {/* Voice call — always visible */}
             <button
-              className="h-9 w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30 active:scale-95"
+              className="h-9 w-9 sm:h-10 sm:w-10 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30 active:scale-95"
               title="Voice call"
               disabled={!selectedConversation || !!activeCall}
               onClick={() => handleStartCall("audio")}
             >
-              <Phone className="h-4.5 w-4.5" />
+              <Phone className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
             </button>
             {/* Video call — always visible */}
             <button
-              className="h-9 w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30 active:scale-95"
+              className="h-9 w-9 sm:h-10 sm:w-10 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30 active:scale-95"
               title="Video call"
               disabled={!selectedConversation || !!activeCall}
               onClick={() => handleStartCall("video")}
             >
-              <Video className="h-4.5 w-4.5" />
+              <Video className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
             </button>
             {/* Settings — always visible */}
             <button
               onClick={() => setShowSettings(true)}
-              className="h-9 w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition active:scale-95"
+              className="h-9 w-9 sm:h-10 sm:w-10 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition active:scale-95"
               title="Settings"
             >
-              <SettingsIcon className="h-4.5 w-4.5" />
+              <SettingsIcon className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
             </button>
-            {/* More menu — Search & Group info (only on small screens) */}
+            {/* More menu — Search & Group info (on small screens) */}
             <div className="relative hidden sm:block">
               <button
                 onClick={() => setShowMoreMenu(!showMoreMenu)}
-                className="h-9 w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition"
+                className="h-9 w-9 sm:h-10 sm:w-10 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition"
                 title="More"
               >
-                <MoreVertical className="h-4.5 w-4.5" />
+                <MoreVertical className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
               </button>
               {showMoreMenu && (
                 <>
@@ -682,10 +682,10 @@ const [showSearch, setShowSearch] = useState(false);
             <div className="flex items-center gap-1 hidden sm:flex">
               <button
                 onClick={() => setShowSearch(true)}
-                className="h-9 w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition"
+                className="h-9 w-9 sm:h-10 sm:w-10 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition"
                 title="Search messages"
               >
-                <Search className="h-4.5 w-4.5" />
+                <Search className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
               </button>
               <button
                 onClick={() => {
@@ -693,11 +693,11 @@ const [showSearch, setShowSearch] = useState(false);
                     setShowGroupInfo(true);
                   }
                 }}
-                className="h-9 w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30 disabled:cursor-not-allowed"
+                className="h-9 w-9 sm:h-10 sm:w-10 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30 disabled:cursor-not-allowed"
                 title="Group info"
                 disabled={selectedConversation?.type !== "group"}
               >
-                <Users className="h-4.5 w-4.5" />
+                <Users className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
               </button>
             </div>
           </div>

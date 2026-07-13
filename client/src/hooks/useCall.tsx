@@ -120,30 +120,51 @@ export const CallProviderInner = ({
     if (!user?._id) return;
     const unsub = socket.addCallInviteListener((data: CallInvitePayload) => {
       if (data.fromUserId === user._id) return;
+      // If already in a call, auto-reject
+      if (activeRef.current) {
+        socket.callReject(data.callId, data.fromUserId, "busy");
+        return;
+      }
       setIncoming(data);
     });
     return unsub;
   }, [socket, user?._id]);
 
+  const endCallCleanup = useCallback(() => {
+    setActive((prev) => (prev ? { ...prev, status: "ended" } : prev));
+    setCallEndedFlag((c) => c + 1);
+    if (ringingTimer.current) {
+      clearTimeout(ringingTimer.current);
+      ringingTimer.current = null;
+    }
+    setTimeout(() => {
+      setActive(null);
+      setIncoming(null);
+    }, 1800);
+  }, []);
+
   const endCallWith = useCallback(
     (reason: "rejected" | "canceled" | "peer-hangup" | "timeout" | "media-failed" | "user-hangup") => {
       const cur = activeRef.current;
       if (!cur) return;
+
+      // Determine hangup target
+      let hangupTo: string | undefined;
+      if (cur.target.kind === "direct") {
+        hangupTo = cur.partner?._id || cur.target.partnerId;
+      }
+
       socket.callHangup({
         callId: cur.callId,
         ...(cur.target.kind === "group"
           ? { conversationId: cur.target.conversationId }
-          : { to: cur.partner?._id ?? cur.target.kind === "direct" ? cur.target.partnerId : undefined }),
+          : { to: hangupTo }),
       });
-      setActive((prev) => (prev ? { ...prev, status: "ended" } : prev));
-      setCallEndedFlag((c) => c + 1);
-      setTimeout(() => {
-        setActive(null);
-        setIncoming(null);
-      }, 1800);
+
+      endCallCleanup();
       void reason;
     },
-    [socket]
+    [socket, endCallCleanup]
   );
 
   /* call:accept — for caller: learn about the accepting peer, create polite peer */
@@ -191,15 +212,17 @@ export const CallProviderInner = ({
     return unsub;
   }, [socket, endCallWith]);
 
-  /* call:cancel — received by caller-side */
+  /* call:cancel — received by callee-side when caller cancels */
   useEffect(() => {
     const unsub = socket.addCallCanceledListener((data) => {
+      // If we have an incoming call matching this callId, dismiss it
+      setIncoming((prev) => (prev && prev.callId === data.callId ? null : prev));
       const cur = activeRef.current;
       if (!cur || data.callId !== cur.callId) return;
-      endCallWith("canceled");
+      endCallCleanup();
     });
     return unsub;
-  }, [socket, endCallWith]);
+  }, [socket, endCallCleanup]);
 
   /* call:hangup */
   useEffect(() => {
@@ -317,26 +340,6 @@ export const CallProviderInner = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active?.callId, active?.status]);
 
-  /* Acquire local media on call start */
-  useEffect(() => {
-    if (!active) return;
-    if (active.status === "ended") return;
-    webRTC.startLocalMedia().catch((err) => {
-      console.error("getUserMedia failed", err);
-      endCallWith("media-failed");
-    });
-    if (ringingTimer.current) clearTimeout(ringingTimer.current);
-    if (active.status === "ringing-out") {
-      ringingTimer.current = setTimeout(() => {
-        endCallWith("timeout");
-      }, RING_TIMEOUT_MS);
-    }
-    return () => {
-      if (ringingTimer.current) clearTimeout(ringingTimer.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active?.callId, active?.status]);
-
   const startCall = useCallback(
     async (
       target: CallTarget,
@@ -374,7 +377,7 @@ export const CallProviderInner = ({
     [socket]
   );
 
-  const acceptIncoming = useCallback(() => {
+  const acceptIncoming = useCallback(async () => {
     const me = userRef.current;
     if (!incoming || !me?._id) return;
     const callId = incoming.callId;
@@ -397,16 +400,28 @@ export const CallProviderInner = ({
     };
     setActive(newActive);
     peersListRef.current = caller._id !== me._id ? [caller] : [];
+    setIncoming(null);
+
+    // Notify caller/group that we accepted — include `to` (caller's ID) for direct routing
+    socket.callAccept(
+      callId,
+      incoming.conversationId,
+      fromUserId, // `to` field — tells server where to route call:accept
+      { _id: me._id, name: me.name, avatar: me.avatar }
+    );
+
+    // Start local media FIRST, then create the peer
+    // (useEffect on active?.callId will also call startLocalMedia, but we need it here
+    //  to ensure tracks are attached before createPeer triggers onnegotiationneeded)
+    try {
+      await webRTCRef.current?.startLocalMedia();
+    } catch (err) {
+      console.error("Failed to acquire media for incoming call", err);
+      // Still try to proceed — peer will be created without tracks
+    }
 
     /* Callee becomes impolite (initiates the offer). */
     webRTCRef.current?.addPeer(caller._id, caller.name, true);
-
-    setIncoming(null);
-    socket.callAccept(callId, incoming.conversationId, {
-      _id: me._id,
-      name: me.name,
-      avatar: me.avatar,
-    });
   }, [incoming, socket]);
 
   const rejectIncoming = useCallback(
@@ -421,8 +436,13 @@ export const CallProviderInner = ({
   const toggleMic = useCallback(() => {
     const cur = activeRef.current;
     if (!cur) return;
+    // Read the ACTUAL track state before toggling to compute the new state accurately
+    const stream = webRTC.local.stream;
+    const currentEnabled = stream?.getAudioTracks()[0]?.enabled ?? webRTC.local.micEnabled;
+    const newEnabled = !currentEnabled;
+
     webRTC.toggleMic();
-    const newEnabled = !webRTC.local.micEnabled;
+
     if (cur.target.kind === "group") {
       socket.callToggle({
         callId: cur.callId,
@@ -443,8 +463,13 @@ export const CallProviderInner = ({
   const toggleCam = useCallback(() => {
     const cur = activeRef.current;
     if (!cur) return;
+    // Read the ACTUAL track state before toggling to compute the new state accurately
+    const stream = webRTC.local.stream;
+    const currentEnabled = stream?.getVideoTracks()[0]?.enabled ?? webRTC.local.camEnabled;
+    const newEnabled = !currentEnabled;
+
     webRTC.toggleCam();
-    const newEnabled = !webRTC.local.camEnabled;
+
     if (cur.target.kind === "group") {
       socket.callToggle({
         callId: cur.callId,
@@ -470,21 +495,24 @@ export const CallProviderInner = ({
       if (recipients.length) {
         socket.callCancel(cur.callId, recipients);
       }
-      setActive((prev) => (prev ? { ...prev, status: "ended" } : prev));
-      setCallEndedFlag((c) => c + 1);
-      setTimeout(() => setActive(null), 1500);
+      endCallCleanup();
       return;
     }
+
+    // Determine hangup target
+    let hangupTo: string | undefined;
+    if (cur.target.kind === "direct") {
+      hangupTo = cur.partner?._id || cur.target.partnerId;
+    }
+
     socket.callHangup({
       callId: cur.callId,
       ...(cur.target.kind === "group"
         ? { conversationId: cur.target.conversationId }
-        : { to: cur.partner?._id }),
+        : { to: hangupTo }),
     });
-    setActive((prev) => (prev ? { ...prev, status: "ended" } : prev));
-    setCallEndedFlag((c) => c + 1);
-    setTimeout(() => setActive(null), 1500);
-  }, [socket]);
+    endCallCleanup();
+  }, [socket, endCallCleanup]);
 
   const value = useMemo<CallContextValue>(
     () => ({

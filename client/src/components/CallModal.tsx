@@ -55,6 +55,20 @@ const CallModal = () => {
       if (aEl && aEl.srcObject !== r.stream) {
         aEl.srcObject = r.stream;
         aEl.play().catch(() => {});
+      } else if (aEl && aEl.paused) {
+        aEl.play().catch(() => {});
+      }
+    });
+    // Clean up removed remotes
+    const currentIds = new Set(media.remotes.map(r => r.userId));
+    remoteRefs.current.forEach((_, id) => {
+      if (!currentIds.has(id)) {
+        remoteRefs.current.delete(id);
+      }
+    });
+    remoteAudioRefs.current.forEach((_, id) => {
+      if (!currentIds.has(id)) {
+        remoteAudioRefs.current.delete(id);
       }
     });
   }, [media.remotes]);
@@ -76,6 +90,18 @@ const CallModal = () => {
     if (!raw) return null;
     return raw.startsWith("http") ? raw : `${API_BASE}${raw}`;
   })();
+
+  // When call ended, stop all media immediately
+  useEffect(() => {
+    if (isEnded) {
+      media.remotes.forEach((r) => {
+        r.stream.getTracks().forEach(t => t.stop());
+      });
+      if (media.local.stream) {
+        media.local.stream.getTracks().forEach(t => t.stop());
+      }
+    }
+  }, [isEnded, media]);
 
   /* Sub-modal when minimized */
   if (minimized) {
@@ -122,7 +148,7 @@ const CallModal = () => {
       <div className="flex-1 relative flex">
         {/* Remote tiles */}
         <div className="flex-1 grid place-items-center p-4 md:p-8 relative overflow-hidden">
-          {media.remotes.length === 0 ? (
+          {media.remotes.length === 0 || isEnded ? (
             <RingingPlaceholder
               name={callerName}
               avatarUrl={callerAvatar}
@@ -157,7 +183,7 @@ const CallModal = () => {
           )}
 
           {/* Local video (PiP) */}
-          {isVideo && media.local.stream && (
+          {isVideo && media.local.stream && !isEnded && (
             <div className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 h-20 w-28 sm:h-28 sm:w-40 md:h-36 md:w-52 rounded-2xl overflow-hidden border border-white/15 shadow-2xl bg-black/60">
               <video
                 ref={localVideoRef}
