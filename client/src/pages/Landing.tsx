@@ -1611,7 +1611,7 @@ export default function Landing() {
 
   return (
     <main
-      className="relative min-h-[100svh] overflow-x-hidden overflow-y-auto bg-[#06060a] text-white antialiased"
+      className="relative min-h-[100svh] w-full bg-[#06060a] text-white antialiased"
       style={{
         fontFamily:
           '"Inter", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',

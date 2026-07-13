@@ -281,8 +281,16 @@ body {
 }
 .animate-pulse-slow { animation: pulse-slow 9s ease-in-out infinite; }
 .animate-pulse-slower { animation: pulse-slower 13s ease-in-out infinite; }
+
+/* Base layout — keep html/body full-height but let pages manage their own scroll */
 html, body, #root {
   height: 100%;
   margin: 0;
-  overflow: hidden; /* set this globally once, not toggled in a component */
+}
+body {
+  overflow-x: hidden;
+}
+/* Pages that need to lock body scroll (e.g. /chat) opt in via .lock-scroll on <body> */
+body.lock-scroll {
+  overflow: hidden;
 }

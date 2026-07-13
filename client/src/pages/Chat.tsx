@@ -25,7 +25,16 @@ import SearchPanel from "../components/SearchPanel";
 import CreateGroupDialog from "../components/CreateGroupDialog";
 import GroupInfoPanel, { type GroupUpdateInfo } from "../components/GroupInfoPanel";
 import SettingsPanel from "../components/UserProfilePanel";
-import { Menu, Search, Settings as SettingsIcon, Phone, Video, MessageSquare, Users } from "lucide-react";
+import {
+  Menu,
+  Search,
+  Settings as SettingsIcon,
+  Phone,
+  Video,
+  MessageSquare,
+  Users,
+  MoreVertical,
+} from "lucide-react";
 import type { User, SendMessagePayload, Message, Conversation } from "../types";
 
 const Chat = () => {
@@ -42,10 +51,11 @@ const Chat = () => {
   const [newMessage, setNewMessage] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [showSearch, setShowSearch] = useState(false);
+const [showSearch, setShowSearch] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showGroupInfo, setShowGroupInfo] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
 
   const { messages, loading, setMessages } = useChatMessages(selectedConversation);
 
@@ -205,6 +215,30 @@ const Chat = () => {
       }
     },
     [selectedConversation, selectedPartner, sendMessage]
+  );
+
+  const handleStartCall = useCallback(
+    (type: "audio" | "video") => {
+      if (!selectedConversation || !user) return;
+      if (selectedConversation.type === "direct") {
+        const partner = selectedPartner;
+        if (partner) {
+          startCall(
+            { kind: "direct", partnerId: partner._id },
+            type,
+            { _id: partner._id, name: partner.name, avatar: partner.avatar }
+          );
+        }
+      } else {
+        startCall(
+          { kind: "group", conversationId: selectedConversation._id },
+          type,
+          undefined,
+          selectedConversation.name
+        );
+      }
+    },
+    [selectedConversation, selectedPartner, user, startCall]
   );
 
   const handleTyping = useCallback(() => {
@@ -577,87 +611,95 @@ const Chat = () => {
             )}
           </div>
 
-          <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+          {/* Header actions — always show call/video/settings; overflow rest into More menu on mobile */}
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            {/* Voice call — always visible */}
             <button
-              className="h-8 w-8 sm:h-9 sm:w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30"
+              className="h-9 w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30 active:scale-95"
               title="Voice call"
               disabled={!selectedConversation || !!activeCall}
-              onClick={() => {
-                if (!selectedConversation || !user) return;
-                if (selectedConversation.type === "direct") {
-                  const partner = selectedPartner;
-                  if (partner) {
-                    startCall(
-                      { kind: "direct", partnerId: partner._id },
-                      "audio",
-                      { _id: partner._id, name: partner.name, avatar: partner.avatar }
-                    );
-                  }
-                } else {
-                  startCall(
-                    { kind: "group", conversationId: selectedConversation._id },
-                    "audio",
-                    undefined,
-                    selectedConversation.name
-                  );
-                }
-              }}
+              onClick={() => handleStartCall("audio")}
             >
-              <Phone className="h-4 w-4" />
+              <Phone className="h-4.5 w-4.5" />
             </button>
+            {/* Video call — always visible */}
             <button
-              className="h-8 w-8 sm:h-9 sm:w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30"
+              className="h-9 w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30 active:scale-95"
               title="Video call"
               disabled={!selectedConversation || !!activeCall}
-              onClick={() => {
-                if (!selectedConversation || !user) return;
-                if (selectedConversation.type === "direct") {
-                  const partner = selectedPartner;
-                  if (partner) {
-                    startCall(
-                      { kind: "direct", partnerId: partner._id },
-                      "video",
-                      { _id: partner._id, name: partner.name, avatar: partner.avatar }
-                    );
-                  }
-                } else {
-                  startCall(
-                    { kind: "group", conversationId: selectedConversation._id },
-                    "video",
-                    undefined,
-                    selectedConversation.name
-                  );
-                }
-              }}
+              onClick={() => handleStartCall("video")}
             >
-              <Video className="h-4 w-4" />
+              <Video className="h-4.5 w-4.5" />
             </button>
-            <button
-              onClick={() => setShowSearch(true)}
-              className="h-8 w-8 sm:h-9 sm:w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition"
-              title="Search messages"
-            >
-              <Search className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => {
-                if (selectedConversation?.type === "group") {
-                  setShowGroupInfo(true);
-                }
-              }}
-              className="h-8 w-8 sm:h-9 sm:w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30 disabled:cursor-not-allowed"
-              title="Group info"
-              disabled={selectedConversation?.type !== "group"}
-            >
-              <Users className="h-4 w-4" />
-            </button>
+            {/* Settings — always visible */}
             <button
               onClick={() => setShowSettings(true)}
-              className="h-8 w-8 sm:h-9 sm:w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition"
+              className="h-9 w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition active:scale-95"
               title="Settings"
             >
-              <SettingsIcon className="h-4 w-4" />
+              <SettingsIcon className="h-4.5 w-4.5" />
             </button>
+            {/* More menu — Search & Group info (only on small screens) */}
+            <div className="relative hidden sm:block">
+              <button
+                onClick={() => setShowMoreMenu(!showMoreMenu)}
+                className="h-9 w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition"
+                title="More"
+              >
+                <MoreVertical className="h-4.5 w-4.5" />
+              </button>
+              {showMoreMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowMoreMenu(false)} />
+                  <div className="absolute right-0 top-full mt-1.5 z-50 rounded-xl bg-[#12141b]/95 backdrop-blur-2xl border border-white/10 shadow-xl min-w-[160px] overflow-hidden animate-[fade-in_0.15s_ease-out]">
+                    <button
+                      onClick={() => {
+                        setShowSearch(true);
+                        setShowMoreMenu(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white/85 hover:bg-white/[0.06] transition"
+                    >
+                      <Search className="h-4 w-4 shrink-0 text-white/60" />
+                      <span>Search messages</span>
+                    </button>
+                    {selectedConversation?.type === "group" && (
+                      <button
+                        onClick={() => {
+                          setShowGroupInfo(true);
+                          setShowMoreMenu(false);
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white/85 hover:bg-white/[0.06] transition"
+                      >
+                        <Users className="h-4 w-4 shrink-0 text-white/60" />
+                        <span>Group info</span>
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+            {/* Search & Group info — visible on sm+ screens */}
+            <div className="flex items-center gap-1 hidden sm:flex">
+              <button
+                onClick={() => setShowSearch(true)}
+                className="h-9 w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition"
+                title="Search messages"
+              >
+                <Search className="h-4.5 w-4.5" />
+              </button>
+              <button
+                onClick={() => {
+                  if (selectedConversation?.type === "group") {
+                    setShowGroupInfo(true);
+                  }
+                }}
+                className="h-9 w-9 grid place-items-center rounded-xl text-white/60 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30 disabled:cursor-not-allowed"
+                title="Group info"
+                disabled={selectedConversation?.type !== "group"}
+              >
+                <Users className="h-4.5 w-4.5" />
+              </button>
+            </div>
           </div>
         </div>
 
