@@ -77,7 +77,7 @@ export function useWebRTC(args: {
       setLocal({ stream, micEnabled: true, camEnabled: type === "video" });
 
       // Attach local tracks to any peers that were created before media was ready
-      peersRef.current.forEach((entry, peerId) => {
+      peersRef.current.forEach((entry) => {
         if (!entry.tracksAttached) {
           stream.getTracks().forEach((t) => {
             entry.pc.addTrack(t, stream);
