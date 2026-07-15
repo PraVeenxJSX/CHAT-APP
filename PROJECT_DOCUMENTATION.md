@@ -98,23 +98,31 @@
 | React Router | 7.10.1 | Client-side Routing |
 | Socket.IO Client | 4.8.1 | Real-time Communication |
 | Axios | 1.13.2 | HTTP Requests |
-| Tailwind CSS | 4.1.18 | Styling |
+| Tailwind CSS | 4.1.18 | Styling (v4 with Vite integration) |
 | Vite | 7.2.4 | Build Tool |
 | jwt-decode | 4.0.0 | JWT Parsing |
+| Three.js / R3F / Drei | 0.185.1 | 3D Graphics (Landing Canvas, interactive phoenix companion) |
+| Framer Motion | 12.42.2 | Interactive UI transitions & page reveals |
+| GSAP / Animejs | Latest | High-fidelity landing page micro-animations |
+| Lenis | 1.3.25 | Smooth scrolling |
+| wavesurfer.js | 7.12.4 | Audio waveform rendering & playback |
+| emoji-picker-react | 4.18.0 | Message reaction and emoji input panel |
+| @react-oauth/google | 0.13.4 | Google Sign-in client library |
 
 ### Backend
 | Technology | Version | Purpose |
 |-----------|---------|---------|
 | Node.js | Latest LTS | Runtime |
-| Express | 5.2.1 | Web Framework |
+| Express | 5.2.1 | Web Framework (v5) |
 | TypeScript | 5.9.3 | Type Safety |
 | MongoDB | Latest | Database |
 | Mongoose | 9.0.1 | ODM for MongoDB |
 | Socket.IO | 4.8.1 | WebSocket Library |
 | JWT | 9.0.3 | Authentication |
 | bcryptjs | 3.0.3 | Password Hashing |
-| Multer | 2.0.2 | File Upload |
-| OpenAI | 6.10.0 | AI Integration |
+| Multer | 2.0.2 | File & audio upload streaming |
+| OpenAI | 6.10.0 | AI Smart Replies Integration (gpt-4o-mini) |
+| google-auth-library | 10.6.1 | Verifying Google Sign-in ID tokens |
 
 ---
 
@@ -125,85 +133,135 @@
 ```javascript
 {
   _id: ObjectId,
-  name: String,              // User's full name
-  email: String,             // Unique email
-  password: String,          // Hashed with bcrypt (salt rounds: 10)
-  createdAt: Date,           // Auto-generated
-  updatedAt: Date            // Auto-generated
+  name: String,                      // User's full display name (required)
+  username: String,                  // Unique username (sparse, lowercased, validated)
+  email: String,                     // Unique email (required)
+  password: String,                  // Hashed with bcryptjs (salt rounds: 10) (optional for Google OAuth)
+  googleId: String,                  // Google profile ID (optional, for OAuth linkage)
+  avatar: String,                    // Path to profile image (uploads/...) or Google picture URL
+  statusMessage: String,             // Custom status message (default: "")
+  dob: String,                       // Date of birth (YYYY-MM-DD)
+  showDob: Boolean,                  // Privacy setting to expose DOB (default: false)
+  showOnlineStatus: Boolean,         // Privacy setting to show active indicator (default: true)
+  createdAt: Date,                   // Auto-generated
+  updatedAt: Date                    // Auto-generated
 }
 ```
 
 **Key Points:**
-- Password is hashed before saving (mongoose pre-save hook)
-- Email is unique (cannot have duplicates)
-- Methods: `matchPassword(password)` - compares plain password with hash
+- Password is automatically hashed on pre-save if modified.
+- Google OAuth links automatically to password-based accounts sharing the same email.
+- Real-time checking of @username uniqueness with fallback recommendation engine.
 
 ### Message Collection
 
 ```javascript
 {
   _id: ObjectId,
-  sender: ObjectId,          // Reference to User
-  receiver: ObjectId,        // Reference to User
-  content: String,           // Message text (required for type: "text")
-  type: String,              // "text" | "image" | "file" | "audio" | "sticker"
-  fileUrl: String,           // URL if type is not text
-  fileType: String,          // MIME type (e.g., "image/png", "application/pdf")
-  status: String,            // "sent" | "delivered" | "read"
-  createdAt: Date,           // Auto-generated
-  updatedAt: Date            // Auto-generated
+  sender: ObjectId,                  // Reference to User (required)
+  receiver: ObjectId,                // Reference to User (for legacy/direct fallback)
+  conversationId: ObjectId,          // Reference to Conversation (direct or group)
+  content: String,                   // Message text (required if type is "text")
+  type: String,                      // "text" | "image" | "file" | "audio" | "sticker"
+  fileUrl: String,                   // URL to asset served statically from /uploads
+  fileType: String,                  // MIME type (e.g. image/png, application/pdf, audio/webm)
+  status: String,                    // "sent" | "delivered" | "read"
+  reactions: [                       // Array of emojis attached to the message
+    {
+      userId: ObjectId,              // User who reacted
+      emoji: String                  // Reaction emoji character
+    }
+  ],
+  createdAt: Date,
+  updatedAt: Date
 }
 ```
 
-**Key Points:**
-- `content` is required only for text messages
-- `fileUrl` and `fileType` used for non-text messages
-- Status tracks message delivery state
-- Sender and receiver reference User documents
+### Conversation Collection
+
+```javascript
+{
+  _id: ObjectId,
+  type: String,                      // "direct" | "group" (required)
+  participants: [ObjectId],          // References to User documents (indexed)
+  name: String,                      // Group name (default: "")
+  avatar: String,                    // Group avatar image URL (default: "")
+  description: String,               // Group description / rules (default: "")
+  admin: ObjectId,                   // Creator / primary owner
+  admins: [ObjectId],                // Users with admin capabilities
+  onlyAdminsCanMessage: Boolean,     // Restricts message posting to admins (default: false)
+  disappearingMessagesSeconds: Number, // Seconds before message disappears (0 = Off)
+  mutedMembers: [                    // Array of users who muted notifications
+    {
+      userId: ObjectId,
+      until: Date                    // Date until mute expires (null = infinite)
+    }
+  ],
+  lastMessage: ObjectId,             // Reference to last Message doc
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+### GroupInvitation Collection
+
+```javascript
+{
+  _id: ObjectId,
+  groupId: ObjectId,                 // Reference to Conversation (group) (required)
+  invitedBy: ObjectId,               // Reference to User (required)
+  invitedUser: ObjectId,             // Reference to User (required)
+  status: String,                    // "pending" | "accepted" | "declined" | "expired"
+  inviteCode: String,                // Unique token code (sparse)
+  expiresAt: Date,                   // Auto-deleted via MongoDB TTL index (default: 7 days)
+  createdAt: Date,
+  updatedAt: Date
+}
+```
 
 ---
 
 ## Features
 
-### ✅ User Authentication
-- **Registration**: Create account with name, email, password
-- **Login**: Email + password authentication
-- **Password Security**: Hashed with bcryptjs (10 salt rounds)
-- **Session Persistence**: Token stored in localStorage, restored on app reload
-- **JWT Token**: Contains user id, name, email (payload decoded without verification on client)
+### ✅ User Authentication & Accounts
+- **Credentials Auth**: Standard registration and login with bcrypt hashing (10 salt rounds).
+- **Google OAuth**: Fast login and account linking via Google Sign-In with automated profile image and email verification.
+- **Session Persistence**: JWT-based session persistence restored automatically from localStorage on app reload.
+- **Profile Settings**: Update display name, customize @username (availability validated on keypress with recommendation system), upload custom avatars, edit status messages, and enter Date of Birth.
+- **Privacy Controls**: Toggles to show/hide date of birth and online/offline status indicators.
 
-### ✅ Real-time Messaging
-- **Instant Delivery**: Messages sent via WebSocket (Socket.IO)
-- **Message History**: Persist in MongoDB, fetchable anytime
-- **Message Types**: Text, Images, Files, Audio, Stickers
-- **Message Status**: Sent → Delivered → Read
-- **Bidirectional**: Sender and receiver both see messages immediately
+### ✅ Rich Real-time Messaging
+- **Instant WebSocket Delivery**: Immediate message dispatch and broadcast using Socket.IO connection rooms.
+- **Message Formats**: Text, images (lightbox preview), static files (downloadable files with icon overlays), audio (microphone voice notes), and stickers.
+- **Voice Messages**: Record WebM files using MediaRecorder, upload them via Multer, and render them as interactive waveforms (using `wavesurfer.js`) with custom playback controls.
+- **Seen Status Tracking**: Tracks sent → delivered → seen status syncs.
+- **Typing Indicators**: Live typing notifications ("User is typing...") that dismiss on stopped-typing triggers and auto-clear timeouts.
+- **Message Reactions**: Attach and toggle emojis on any message bubble, sync-broadcasting reaction arrays in real-time.
 
-### ✅ Online/Offline Status
-- **Online Indicator**: Green dot next to active users
-- **Real-time Updates**: Uses Socket.IO rooms to track connections
-- **Broadcast**: Server broadcasts online users list to all clients
+### ✅ Group Conversations & Management
+- **Group Creation**: Create group dialog with multi-member selection, custom names, and descriptions.
+- **Group Settings Panel**: Update group name, description, and avatar; add members, promote/demote administrators, and remove participants.
+- **Permissions Restricting**: Admin toggle to restrict write permissions to group admins only.
+- **Mute Alerts**: Option to mute group conversation notifications for 8 hours, 1 week, or Always.
+- **Disappearing Messages**: Automatically age-out and clear old messages after 24 hours, 7 days, or 90 days.
+- **Invitation Network**: Create direct pending group invitations, list active pending invitations, or share link codes to invite users directly.
 
-### ✅ Typing Indicator
-- **Live Feedback**: "User is typing..." appears in real-time
-- **Auto-dismiss**: Disappears after user stops typing
-- **Lightweight**: No database writes, only Socket.IO events
+### ✅ WebRTC Audio & Video Calling
+- **WebRTC Peer-to-Peer Calls**: One-to-one and group voice/video calls.
+- **Perfect Negotiation**: Perfect negotiation mesh WebRTC client protocol (`useWebRTC.ts`) handling polite/impolite states, rolling back SDP collision states, and negotiating track changes.
+- **ICE Configuration Endpoints**: STUN/TURN connection routes serving Google STUN and custom TURN credentials.
+- **Audio/Video Layouts**: Responsive remote user video grid, local PiP stream overlay, and active mic/camera toggles.
+- **Call Minimization**: Call screen minimizes to a floating status bubble (caller name + elapsed time) so users can browse chats and type messages during calls.
 
-### ✅ Protected Routes
-- **Route Guard**: `/chat` requires valid authentication
-- **Redirect**: Unauthenticated users sent to login page
-- **Token Validation**: Both client-side (context) and server-side (middleware)
+### ✅ AI-Powered Smart Replies
+- **Smart suggestions**: Renders 4 AI-generated contextual reply boxes tailored to the last received text message.
+- **Context Generation**: Queries OpenAI (`gpt-4o-mini`) via server-side controller, receiving strict prompt-formatted array suggestions in real-time.
 
-### ✅ Responsive Design
-- **Mobile-friendly**: Tailwind CSS responsive classes
-- **Sidebar Toggle**: Collapses on mobile for better UX
-- **Auto-scroll**: Messages list scrolls to newest message
-
-### ✅ File Upload Support
-- **Multer Integration**: Server-side file upload handling
-- **Supported Types**: Images, PDFs, Audio, any file type
-- **Storage**: Files saved to `/uploads` folder
-- **Static Serving**: Accessible via `/uploads/{filename}`
+### ✅ Premium UI/UX & Design
+- **Responsive Layout**: Sidebar collapses on mobile devices to optimize workspace real estate.
+- **High-Fidelity Animations**: Animated page transitions with Framer Motion, micro-animations with GSAP/Anime.js, and smooth scrolling with Lenis.
+- **Interactive 3D WebGL Elements**: Landing page featuring a Three.js interactive Canvas with floating 3D orbits that explode into particle rings on hover and click.
+- **3D Phoenix Companion**: Interactive WebGL bird model perched on active orbits, flying between orbits on burst, and tracking mouse coordinate movements.
 
 ---
 
@@ -522,6 +580,97 @@ useEffect(() => {
 }, [token]);
 ```
 
+### 8. Google OAuth Authentication Flow
+
+```
+1. Client initializes @react-oauth/google provider.
+2. User clicks "Sign in with Google" button.
+3. Google client SDK performs authentication and returns an ID Token credential.
+4. Frontend POSTs `/api/auth/google` with { credential }.
+5. Server validates token using OAuth2Client.verifyIdToken() from google-auth-library.
+6. Extract profile info: email, name, avatar (picture URL), and googleId.
+7. Checks if a user already exists in MongoDB with this googleId or email:
+   - If user exists by email but googleId is unlinked, update document with googleId and picture avatar.
+   - If user doesn't exist, create a new User document using email prefix as display name.
+8. Server returns generated JWT token containing user info.
+9. Client updates AuthContext, stores token, and redirects to /chat.
+```
+
+---
+
+### 9. WebRTC Calling & Signaling Flow
+
+WebRTC establishes peer-to-peer media streaming using Socket.IO as a signaling channel.
+
+#### Signaling Flow Diagram:
+```
+Caller (Offerer)                 Socket.IO Server                 Callee (Answerer)
+    │                                  │                                  │
+    │─── call:invite ─────────────────►│                                  │
+    │    (type, target, caller)        │─── call:invite ─────────────────►│
+    │                                  │    (show incoming modal)         │
+    │                                  │                                  │
+    │                                  │◄── call:accept (or reject) ──────│
+    │◄── call:accept ──────────────────│                                  │
+    │                                  │                                  │
+    │   [Perfect Negotiation Setup]    │                                  │
+    │   (Create PeerConnection,        │                                  │
+    │    impolite = true)              │    [Perfect Negotiation Setup]   │
+    │                                  │    (Create PeerConnection,       │
+    │─── call:offer ──────────────────►│     impolite = false)            │
+    │    (SDP offer)                   │─── call:offer ──────────────────►│
+    │                                  │                                  │
+    │                                  │◄── call:answer ──────────────────│
+    │◄── call:answer ──────────────────│    (SDP answer)                  │
+    │    (SDP answer)                  │                                  │
+    │                                  │                                  │
+    │─── call:ice ────────────────────►│                                  │
+    │    (ICE candidate)               │─── call:ice ────────────────────►│
+    │                                  │    (ICE candidate)               │
+    │◄── call:ice ─────────────────────│◄── call:ice ─────────────────────│
+    │                                  │                                  │
+    │                 ===================================                 │
+    │                 ==== Peer-to-Peer Media Flow ======                 │
+    │                 ===================================                 │
+```
+
+#### Perfect Negotiation Rules:
+- The caller is designated as **impolite** (initiates all session description negotiations, ignores collision offers from callee).
+- The callee is designated as **polite** (rolls back their own local description state if a signaling collision happens, accepting the impolite offer instead).
+- This approach avoids signaling state deadlocks in multi-device group calling.
+- Track changes (e.g. mic/cam mute/unmute) automatically trigger renegotiation, exchanging updated SDP declarations.
+
+---
+
+### 10. Group Chats & Administrative Permissions
+
+Group chats introduce shared conversations containing multiple participants:
+- **Conversation Documents**: Store type (`"group"`), `participants` IDs, `admin` owner, and an array of `admins`.
+- **Admin Verification**: Middleware and sockets check user roles:
+  ```typescript
+  const isAdmin = conversation.admin.toString() === userId || conversation.admins.includes(userId);
+  ```
+- **Only Admins Can Message**: If true, when a non-admin emits `sendMessage`, the Socket.IO handler rejects the event, returning a `sendMessageError` to the client.
+- **Disappearing Messages**: Frontend/backend check disappearing seconds settings and schedule cleanup.
+- **Mute Settings**: Users can mute group alerts. The server stores `{ userId, until }` in `mutedMembers` to exclude users from active push/notification workflows.
+
+---
+
+### 11. AI Reply Suggestions
+
+```
+1. Client receives a new message via Socket.IO: receiveMessage.
+2. If the message type is "text" and from a remote partner, trigger suggestions fetching.
+3. Client calls POST /api/ai/suggestions with { message: content } in body.
+4. Controller receives message content, checks OPENAI_API_KEY.
+5. Create OpenAI chat completion:
+   - Model: gpt-4o-mini
+   - Messages: System prompt ("You are a chat assistant. Reply ONLY with a JSON array of short reply suggestions. Do not add explanation.") + User message content.
+6. Server parses response, extracting JSON array, and sends back to client.
+7. Client renders 4 contextual reply bubbles above the message input bar.
+8. Selecting a bubble appends suggestion to input state and dismisses suggestions.
+```
+
 ---
 
 ## API Endpoints
@@ -529,89 +678,250 @@ useEffect(() => {
 ### Authentication Routes (`/api/auth`)
 
 #### POST `/api/auth/register`
-**Request:**
-```json
-{
-  "name": "John Doe",
-  "email": "john@example.com",
-  "password": "password123"
-}
-```
-
-**Response:**
-```json
-{
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "user": {
-    "id": "507f1f77bcf86cd799439011",
+Creates a credentials-based user.
+- **Request:**
+  ```json
+  {
     "name": "John Doe",
-    "email": "john@example.com"
+    "email": "john@example.com",
+    "password": "password123"
   }
-}
-```
+  ```
+- **Response:**
+  ```json
+  {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "user": {
+      "id": "507f1f77bcf86cd799439011",
+      "name": "John Doe",
+      "email": "john@example.com"
+    }
+  }
+  ```
 
 #### POST `/api/auth/login`
-**Request:**
-```json
-{
-  "email": "john@example.com",
-  "password": "password123"
-}
-```
+Logs in a credentials-based user.
+- **Request:**
+  ```json
+  {
+    "email": "john@example.com",
+    "password": "password123"
+  }
+  ```
+- **Response:** Same as register
 
-**Response:** Same as register
+#### POST `/api/auth/google`
+Authenticates a user via Google OAuth2 ID token.
+- **Request:**
+  ```json
+  {
+    "credential": "eyJhbGciOiJSUzI1NiIsImtpZCI6..."
+  }
+  ```
+- **Response:**
+  ```json
+  {
+    "_id": "507f1f77bcf86cd799439011",
+    "name": "John Doe",
+    "email": "john@example.com",
+    "avatar": "https://lh3.googleusercontent.com/a/...",
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }
+  ```
 
 ---
 
 ### User Routes (`/api/users`)
 
 #### GET `/api/users`
-**Headers:** `Authorization: Bearer {token}`
+Returns all registered users (excluding current user).
+- **Headers:** `Authorization: Bearer {token}`
+- **Response:**
+  ```json
+  [
+    {
+      "_id": "507f1f77bcf86cd799439012",
+      "name": "Alice",
+      "username": "alice_smith",
+      "email": "alice@example.com",
+      "avatar": "/uploads/avatar-123.jpg",
+      "statusMessage": "In a meeting",
+      "dob": "1995-12-01",
+      "showDob": true,
+      "showOnlineStatus": true
+    }
+  ]
+  ```
 
-**Response:**
-```json
-[
+#### GET `/api/users/me`
+Gets current logged in user's profile info.
+- **Headers:** `Authorization: Bearer {token}`
+- **Response:** Same format as a single user object.
+
+#### GET `/api/users/check-username`
+Checks if a @username is available.
+- **Query Params:** `username`
+- **Headers:** `Authorization: Bearer {token}`
+- **Response (Available):**
+  ```json
+  { "available": true }
+  ```
+- **Response (Unavailable):**
+  ```json
   {
-    "_id": "507f1f77bcf86cd799439011",
-    "name": "Alice",
-    "email": "alice@example.com"
-  },
-  {
-    "_id": "507f1f77bcf86cd799439012",
-    "name": "Bob",
-    "email": "bob@example.com"
+    "available": false,
+    "reason": "Already taken",
+    "suggestions": ["johndoe1", "johndoe_42", "johndoe.3"]
   }
-]
-```
-**Note:** Current user excluded from list
+  ```
+
+#### PUT `/api/users/profile`
+Updates current user's profile parameters. Supports multipart/form-data for avatar file uploading.
+- **Headers:** `Authorization: Bearer {token}`
+- **Request Body (FormData):**
+  - `name`: String (optional)
+  - `username`: String (optional)
+  - `statusMessage`: String (optional)
+  - `dob`: String (YYYY-MM-DD, optional)
+  - `showDob`: Boolean (optional)
+  - `showOnlineStatus`: Boolean (optional)
+  - `avatar`: File (optional, multipart file)
+- **Response:** Updated user object.
 
 ---
 
 ### Message Routes (`/api/messages`)
 
 #### GET `/api/messages/:userId`
-**Headers:** `Authorization: Bearer {token}`
+Legacy API to fetch message history for direct chat.
+- **Headers:** `Authorization: Bearer {token}`
 
-**Response:**
-```json
-[
+#### POST `/api/messages/upload`
+Uploads a file/audio attachment for chat.
+- **Headers:** `Authorization: Bearer {token}`
+- **Request Body:** Form data containing `file`
+- **Response:**
+  ```json
   {
-    "_id": "507f191e810c19729de860ea",
-    "sender": {
-      "_id": "507f1f77bcf86cd799439011",
-      "name": "John Doe"
-    },
-    "receiver": {
-      "_id": "507f1f77bcf86cd799439012",
-      "name": "Jane Doe"
-    },
-    "content": "Hello!",
-    "type": "text",
-    "status": "read",
-    "createdAt": "2024-01-28T10:30:00Z"
+    "fileUrl": "/uploads/voice-17188.webm",
+    "fileType": "audio/webm"
   }
-]
-```
+  ```
+
+---
+
+### Conversation Routes (`/api/conversations`)
+
+#### GET `/api/conversations`
+Gets all conversations the current user participates in.
+- **Headers:** `Authorization: Bearer {token}`
+- **Response:**
+  ```json
+  [
+    {
+      "_id": "607f1f77bcf86cd799439034",
+      "type": "group",
+      "name": "Design Team",
+      "participants": [...],
+      "admins": [...],
+      "lastMessage": {...},
+      "updatedAt": "2026-07-15T09:30:00Z"
+    }
+  ]
+  ```
+
+#### POST `/api/conversations/direct`
+Get or create a direct conversation with a partner.
+- **Headers:** `Authorization: Bearer {token}`
+- **Request:** `{ "partnerId": "607f1f77bcf86cd799439012" }`
+- **Response:** Conversation object.
+
+#### POST `/api/conversations/group`
+Creates a new group conversation.
+- **Headers:** `Authorization: Bearer {token}`
+- **Request:**
+  ```json
+  {
+    "name": "Tech Chat",
+    "description": "General discussions",
+    "participantIds": ["607f1f77bcf86cd799439012", "607f1f77bcf86cd799439013"]
+  }
+  ```
+- **Response:** Populated group Conversation object.
+
+#### GET `/api/conversations/:conversationId/messages`
+Gets all messages in a specific conversation.
+- **Headers:** `Authorization: Bearer {token}`
+- **Response:** Array of Message objects.
+
+#### PUT `/api/conversations/:id`
+Updates group metadata (name, description, participants, disappearing messages, avatar).
+- **Headers:** `Authorization: Bearer {token}`
+- **Request Body (FormData / JSON):** Fields to update.
+- **Response:** Updated Conversation object.
+
+#### POST `/api/conversations/:id/mute`
+Mute/unmute conversation alerts.
+- **Headers:** `Authorization: Bearer {token}`
+- **Request:** `{ "durationHours": 8 }` (or `null` to unmute)
+- **Response:** `{ "muted": true, "until": "2026-07-15T18:00:00Z" }`
+
+#### POST `/api/conversations/:id/leave`
+Leaves group conversation.
+- **Headers:** `Authorization: Bearer {token}`
+
+---
+
+### Group Invitation Routes (`/api/group-invitations`)
+
+#### GET `/api/group-invitations/invitations`
+Gets all pending group invitations for the current user.
+- **Headers:** `Authorization: Bearer {token}`
+
+#### POST `/api/group-invitations/invitations`
+Invites a user to a group conversation.
+- **Headers:** `Authorization: Bearer {token}`
+- **Request:** `{ "groupId": "...", "invitedUser": "..." }`
+
+#### POST `/api/group-invitations/invitations/:invitationId/accept` (or `/decline`)
+Accepts or declines a pending group invitation.
+- **Headers:** `Authorization: Bearer {token}`
+
+#### GET `/api/group-invitations/groups/:groupId/invite-link`
+Gets the shareable invitation code/link for a group.
+- **Headers:** `Authorization: Bearer {token}`
+
+#### POST `/api/group-invitations/join/:inviteCode`
+Joins a group using a shareable invite code.
+- **Headers:** `Authorization: Bearer {token}`
+
+---
+
+### Call Signaling Routes (`/api/calls`)
+
+#### GET `/api/calls/ice-servers`
+Fetches WebRTC ICE servers configuration (STUN/TURN settings).
+- **Headers:** `Authorization: Bearer {token}`
+- **Response:**
+  ```json
+  {
+    "iceServers": [
+      { "urls": ["stun:stun.l.google.com:19302", ...] },
+      { "urls": "turn:your-turn-server.com", "username": "...", "credential": "..." }
+    ]
+  }
+  ```
+
+---
+
+### AI Routes (`/api/ai`)
+
+#### POST `/api/ai/suggestions`
+Gets reply suggestions for a message.
+- **Headers:** `Authorization: Bearer {token}`
+- **Request:** `{ "message": "Are we meeting today?" }`
+- **Response:** `["Yes, at 2 PM", "No, it is canceled", "I am running late", "What time?"]`
+
 
 ---
 
@@ -626,47 +936,79 @@ socket.emit("join", { userId: user._id });
 ```
 
 #### `sendMessage`
-Sends a new message
+Sends a new message to a user or conversation
 ```javascript
 socket.emit("sendMessage", {
-  receiver: "607f1f77bcf86cd799439012",
-  content: "Hello there!"
+  receiver: "607f1f77bcf86cd799439012",      // Optional: For direct messaging
+  conversationId: "607f1f77bcf86cd799439034", // Optional: For group/convo messaging
+  content: "Hello there!",
+  type: "text",                               // "text" | "image" | "file" | "audio" | "sticker"
+  fileUrl: "/uploads/file.png",               // Optional: URL to attachment
+  fileType: "image/png"                       // Optional: MIME type
 });
 ```
 
 #### `typing`
-Notifies receiver that user is typing
+Notifies receiver(s) that user is typing
 ```javascript
-socket.emit("typing", { receiver: "607f1f77bcf86cd799439012" });
+socket.emit("typing", { 
+  receiver: "607f1f77bcf86cd799439012",       // Optional: direct partner
+  conversationId: "607f1f77bcf86cd799439034"  // Optional: group chat
+});
 ```
 
 #### `stopTyping`
-Notifies receiver that user stopped typing
+Notifies receiver(s) that user stopped typing
 ```javascript
-socket.emit("stopTyping", { receiver: "607f1f77bcf86cd799439012" });
+socket.emit("stopTyping", { 
+  receiver: "607f1f77bcf86cd799439012",
+  conversationId: "607f1f77bcf86cd799439034"
+});
 ```
 
 #### `markSeen`
-Marks messages as read
+Marks messages from sender as read
 ```javascript
 socket.emit("markSeen", { senderId: "607f1f77bcf86cd799439012" });
 ```
+
+#### `addReaction`
+Adds or toggles a reaction on a message
+```javascript
+socket.emit("addReaction", { 
+  messageId: "607f1f77bcf86cd7994390aa", 
+  emoji: "❤️" 
+});
+```
+
+#### WebRTC Signaling Events
+- `call:invite`: Initiates a voice/video call.
+- `call:cancel`: Cancels an outgoing call before acceptance.
+- `call:accept`: Accepts an incoming call.
+- `call:reject`: Rejects an incoming call.
+- `call:busy`: Returns busy status to caller.
+- `call:offer`: Exchanges local WebRTC SDP offer.
+- `call:answer`: Exchanges remote WebRTC SDP answer.
+- `call:ice`: Exchanges ICE candidate.
+- `call:toggle`: Mute/unmute microphone or turn camera on/off.
+- `call:hangup`: Ends call session.
 
 ---
 
 ### Server → Client Events
 
 #### `receiveMessage`
-Broadcast when a new message is sent
+Broadcast when a new message is sent (sent with "delivered" to receiver and "sent" to sender)
 ```javascript
 {
   _id: "607f191e810c19729de860ea",
-  sender: { _id: "...", name: "..." },
-  receiver: { _id: "...", name: "..." },
+  sender: { _id: "507f1f77bcf86cd799439011" },
+  receiver: { _id: "507f1f77bcf86cd799439012" }, // Optional
+  conversationId: "607f1f77bcf86cd799439034",   // Optional
   content: "Hello!",
+  type: "text",
   status: "delivered",
-  createdAt: Date,
-  type: "text"
+  createdAt: Date
 }
 ```
 
@@ -679,19 +1021,36 @@ Broadcast list of online user IDs
 #### `typing`
 Notifies that a user is typing
 ```javascript
-{ sender: "607f1f77bcf86cd799439011" }
+{ 
+  sender: "607f1f77bcf86cd799439011",
+  conversationId: "607f1f77bcf86cd799439034" // Optional: for group chats
+}
 ```
 
 #### `stopTyping`
 Notifies that a user stopped typing
 ```javascript
-{ sender: "607f1f77bcf86cd799439011" }
+{ 
+  sender: "607f1f77bcf86cd799439011",
+  conversationId: "607f1f77bcf86cd799439034"
+}
 ```
 
-#### `messageSeen`
-Notifies sender that message was read
+#### `messagesSeen`
+Notifies sender that messages were read
 ```javascript
-{ senderId: "607f1f77bcf86cd799439012" }
+{ receiverId: "607f1f77bcf86cd799439012" }
+```
+
+#### `reactionUpdate`
+Broadcasting reactions update on a message
+```javascript
+{ 
+  messageId: "607f1f77bcf86cd7994390aa", 
+  reactions: [
+    { userId: "607f1f77bcf86cd799439012", emoji: "❤️" }
+  ] 
+}
 ```
 
 ---
@@ -914,12 +1273,12 @@ Signature: hmac(header.payload, JWT_SECRET)
 ### 3. MongoDB + Mongoose
 
 **Why?**
-- Flexible schema (supports different message types)
+- Flexible schema (supports different message types and dynamic conversation shapes)
 - Scalable for real-time applications
-- References between collections (User-Message relationships)
+- References between collections (User-Message-Conversation relationships)
 - Timestamps auto-managed
 
-**Alternative:** PostgreSQL - would require more schema planning
+**Alternative:** PostgreSQL - would require more schema migrations and planning
 
 ---
 
@@ -929,7 +1288,7 @@ Signature: hmac(header.payload, JWT_SECRET)
 - Simpler setup, less boilerplate
 - Sufficient for this app's state complexity
 - Built into React, no additional dependencies
-- Perfect for authentication state
+- Perfect for authentication and socket connection states
 
 **When to upgrade to Redux:**
 - Deeply nested component trees
@@ -951,7 +1310,7 @@ io.to(receiver).emit("receiveMessage", msg);
 **Benefits:**
 - Efficient: Only target user receives event
 - Scalable: Server doesn't broadcast to all users
-- Simple: No need for manual user tracking
+- Simple: No need for manual user-to-socket ID mappings
 
 ---
 
@@ -978,13 +1337,46 @@ io.to(userId).emit("receiveMessage", msg);
 **Why not base64 encoding?**
 - Base64 increases payload size by 33%
 - Multer handles streaming (memory efficient)
-- Better for large files
+- Better for large files and audio recording uploads
 
 **Flow:**
 1. Client sends FormData with file
 2. Multer stores file in `/uploads`
 3. Backend creates message with fileUrl
 4. Client displays image/file from URL
+
+---
+
+### 8. WebRTC Perfect Negotiation
+**Why?**
+- Decouples signaling and negotiation logic from application state.
+- Designates polite and impolite peers to handle SDP offer collisions automatically.
+- Simplifies multi-party connection setups (Mesh grid calling).
+- Resolves signaling synchronization locks without complex state-machine overrides.
+
+---
+
+### 9. Google OAuth Integration
+**Why?**
+- Eliminates friction for user onboarding.
+- Ensures verified email fields and profiles.
+- Seamlessly links credentials accounts with Google IDs, avoiding duplicate database rows.
+
+---
+
+### 10. Three.js for 3D Landing Canvas
+**Why?**
+- Delivers a premium, state-of-the-art visual style immediately.
+- Custom WebGL shading on interactive distorting spheres provides high-fidelity aesthetics.
+- The 3D Phoenix companion dynamically perches and travels between spheres, bringing life to the Landing copy.
+
+---
+
+### 11. OpenAI Smart Reply Suggestions
+**Why?**
+- Uses `gpt-4o-mini` with a focused system prompt to generate highly context-aware replies.
+- JSON-only response structure guarantees reliable parsing on the Express server.
+- Streamlines messaging user experience on mobile screens by reducing typing overhead.
 
 ---
 
@@ -1168,6 +1560,42 @@ However, if a user is connected via multiple tabs/windows, they might receive du
 
 ---
 
+### Q11: How does Perfect Negotiation work in the WebRTC calling implementation?
+
+**Answer:**
+"Perfect negotiation splits WebRTC peers into 'polite' and 'impolite' roles. When a caller initiates a connection, they are impolite; the callee is polite.
+If both sides attempt to create and send an offer simultaneously (a signaling collision), the polite callee automatically rolls back their local description and accepts the incoming offer. The impolite caller simply ignores the callee's collision offer.
+This logic, implemented in `useWebRTC.ts`, prevents signaling deadlocks and handles network renegotiations (like switching cameras or mutes) transparently."
+
+---
+
+### Q12: How are permissions checked for group chats and settings?
+
+**Answer:**
+"Permissions are validated at both the REST API layer and the Socket.IO layer.
+When creating or updating a group (such as adding members or updating disappearing message timers), the Express routes query the Conversation database to ensure the requesting user is listed as an admin or owner.
+For real-time messaging, if the group has `onlyAdminsCanMessage` enabled, the Socket.IO server checks if the sender's ID is in the conversation's `admins` array. If they are not, the message is blocked and an error socket event is returned, preventing malicious spoofing."
+
+---
+
+### Q13: How does the AI Smart Reply system generate recommendations?
+
+**Answer:**
+"When a user receives a text message, the client calls GET `/api/ai/suggestions` passing the received content.
+The server receives the text and queries OpenAI's chat completions API using the `gpt-4o-mini` model. The system prompt directs the AI to act as a chat assistant and return ONLY a JSON-formatted array of 4 short reply options.
+The server parses the JSON response and returns the array to the client. If the API fails or doesn't return JSON, it fails gracefully by returning an empty array, avoiding app crashes."
+
+---
+
+### Q14: How does Google OAuth authentication and account linking work under the hood?
+
+**Answer:**
+"We use the `@react-oauth/google` SDK on the client to initiate the sign-in flow. When the user successfully signs in, Google returns a secure ID Token credential.
+This credential is sent to `/api/auth/google`. The backend uses `google-auth-library` to decrypt and verify the ID Token against our Google Client ID.
+Once verified, we extract the Google ID, name, email, and picture. We query MongoDB for a user with the same Google ID or email. If found, we link the accounts (if not already linked) and update the avatar picture. If not found, we create a new User document. Finally, we issue our own custom JWT token, allowing the user to start their chat session."
+
+---
+
 ## Troubleshooting
 
 ### Issue: "Socket connection fails with 'Authentication error'"
@@ -1251,4 +1679,4 @@ Perfect for learning full-stack development, interview preparation, and as a sta
 
 ---
 
-**Last Updated:** January 28, 2026
+**Last Updated:** July 15, 2026
