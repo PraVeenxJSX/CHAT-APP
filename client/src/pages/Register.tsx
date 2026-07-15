@@ -64,7 +64,7 @@ const Register = () => {
 
   return (
     <PremiumAuthShell mode="register">
-      <div className="mb-8">
+      <div className="mb-6 sm:mb-8">
         <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight">Create your account</h2>
         <p className="mt-2 text-sm text-white/50">
           Free forever for personal use. No credit card required.
@@ -140,7 +140,7 @@ const Register = () => {
                 {[0, 1, 2, 3].map((i) => (
                   <div
                     key={i}
-                    className={`h-1 flex-1 rounded-full transition-colors ${
+                    className={`h-1.5 flex-1 rounded-full transition-colors ${
                       i < strength ? strengthColor : "bg-white/10"
                     }`}
                   />
@@ -159,7 +159,7 @@ const Register = () => {
         <button
           type="submit"
           disabled={loading}
-          className="mt-2 w-full h-11 rounded-xl bg-gradient-to-b from-[#6b78ff] to-[#5865F2] hover:from-[#7a86ff] hover:to-[#5865F2] text-white font-medium text-sm shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40 active:scale-[0.99] transition disabled:opacity-60 flex items-center justify-center gap-2"
+          className="mt-2 w-full min-h-11 rounded-xl bg-gradient-to-b from-[#6b78ff] to-[#5865F2] hover:from-[#7a86ff] hover:to-[#5865F2] text-white font-medium text-sm shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40 active:scale-[0.99] transition disabled:opacity-60 flex items-center justify-center gap-2 px-4 py-3"
         >
           {loading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -179,21 +179,19 @@ const Register = () => {
             <span className="px-3 text-xs text-white/40">or sign up with</span>
             <div className="flex-1 h-px bg-white/10" />
           </div>
-          <div className="flex justify-center">
+          <div className="flex justify-center w-full overflow-hidden">
             <GoogleLogin
               onSuccess={handleGoogleSuccess}
               onError={() => setError("Google sign-up failed")}
               theme="filled_black"
               shape="pill"
-              size="large"
-              width="320"
               text="signup_with"
             />
           </div>
         </>
       ) : null}
 
-      <p className="mt-8 text-sm text-center text-white/50">
+      <p className="mt-6 sm:mt-8 text-sm text-center text-white/50">
         Already have an account?{" "}
         <button
           type="button"

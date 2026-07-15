@@ -234,7 +234,7 @@ export default function LandingCompanion() {
       aria-hidden
       className="pointer-events-none fixed inset-x-0 top-0"
       style={{
-        height: "100vh",
+        height: "100dvh",
         zIndex: 8,
         opacity: ready && visible ? 1 : 0,
         transition: "opacity 600ms cubic-bezier(0.22,1,0.36,1)",

@@ -661,10 +661,10 @@ function Hero() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 1.55, duration: 0.7, ease: "easeOut" }}
-          className="max-w-3xl text-balance text-5xl font-semibold leading-[1.05] tracking-tight text-white md:text-7xl"
+          className="max-w-3xl text-balance text-4xl font-semibold leading-[1.05] tracking-tight text-white sm:text-5xl md:text-7xl"
         >
           The chat platform that
-          <br />
+          <br className="hidden sm:block" />
           <span className="relative inline-block">
             <span className="bg-gradient-to-r from-cyan-300 via-fuchsia-400 to-pink-400 bg-clip-text text-transparent">
               <span id="companion-anchor">feels</span> alive.
@@ -710,9 +710,9 @@ function Hero() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 2.3, duration: 1 }}
-          className="mt-14 flex items-center gap-6 text-xs text-white/40"
+          className="mt-10 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-center text-xs text-white/40 sm:mt-14"
         >
-          <span>Trusted by early teams at</span>
+          <span className="w-full sm:w-auto">Trusted by early teams at</span>
           <span className="tracking-widest">◇ ORBIT</span>
           <span className="tracking-widest">△ HELIX</span>
           <span className="tracking-widest">◎ NOVA</span>
@@ -759,7 +759,7 @@ function SectionHeader({
         </span>
       </Reveal>
       <Reveal delay={0.1}>
-        <h2 className="mt-5 text-balance text-4xl font-semibold tracking-tight text-white md:text-5xl">
+        <h2 className="mt-5 text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl md:text-5xl">
           {title}
         </h2>
       </Reveal>
@@ -862,7 +862,7 @@ const FEATURES = [
 
 function Features() {
   return (
-    <section id="features" className="relative py-32">
+    <section id="features" className="relative py-20 sm:py-24 md:py-32">
       <div data-companion-perch>
         <SectionHeader
           eyebrow="Features"
@@ -940,7 +940,7 @@ function LiveDemo() {
   }, [inView]);
 
   return (
-    <section className="relative py-32">
+    <section className="relative py-20 sm:py-24 md:py-32">
       <div data-companion-perch>
         <SectionHeader
           eyebrow="Live demo"
@@ -1028,14 +1028,14 @@ function LiveDemo() {
 function TripletSection() {
   return (
     <>
-      <section id="security" className="relative py-32">
+      <section id="security" className="relative py-20 sm:py-24 md:py-32">
         <div data-companion-perch className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-10 px-4 lg:grid-cols-2">
           <Reveal>
             <div>
               <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-white/60">
                 Security
               </span>
-              <h2 className="mt-4 text-4xl font-semibold tracking-tight text-white md:text-5xl">
+              <h2 className="mt-4 text-3xl font-semibold tracking-tight text-white sm:text-4xl md:text-5xl">
                 Private conversations,
                 <br />
                 by design.
@@ -1061,7 +1061,7 @@ function TripletSection() {
             </div>
           </Reveal>
           <Reveal delay={0.1}>
-            <GlassCard className="aspect-square p-8">
+            <GlassCard className="aspect-square p-6 sm:p-8 sm:max-w-sm sm:mx-auto">
               <div className="flex h-full flex-col items-center justify-center">
                 <div className="relative">
                   <div className="absolute inset-0 rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 opacity-40 blur-3xl" />
@@ -1085,7 +1085,7 @@ function TripletSection() {
         </div>
       </section>
 
-      <section id="groups" className="relative py-32">
+      <section id="groups" className="relative py-20 sm:py-24 md:py-32">
         <div data-companion-perch className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-10 px-4 lg:grid-cols-2">
           <Reveal>
             <GlassCard className="p-6">
@@ -1125,7 +1125,7 @@ function TripletSection() {
               <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-white/60">
                 Groups
               </span>
-              <h2 className="mt-4 text-4xl font-semibold tracking-tight text-white md:text-5xl">
+              <h2 className="mt-4 text-3xl font-semibold tracking-tight text-white sm:text-4xl md:text-5xl">
                 Communities that
                 <br />
                 actually feel alive.
@@ -1139,14 +1139,14 @@ function TripletSection() {
         </div>
       </section>
 
-      <section className="relative py-32">
+      <section className="relative py-20 sm:py-24 md:py-32">
         <div data-companion-perch className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-10 px-4 lg:grid-cols-2">
           <Reveal>
             <div>
               <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-white/60">
                 Voice ready
               </span>
-              <h2 className="mt-4 text-4xl font-semibold tracking-tight text-white md:text-5xl">
+              <h2 className="mt-4 text-3xl font-semibold tracking-tight text-white sm:text-4xl md:text-5xl">
                 Say it with your voice.
               </h2>
               <p className="mt-4 max-w-md text-white/60">
@@ -1156,13 +1156,13 @@ function TripletSection() {
             </div>
           </Reveal>
           <Reveal delay={0.1}>
-            <GlassCard className="p-8">
-              <div className="flex items-center gap-4">
+            <GlassCard className="p-6 sm:p-8">
+              <div className="flex items-center gap-3 sm:gap-4">
                 <button className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 to-fuchsia-500 shadow-lg">
                   <Mic className="h-5 w-5 text-white" />
                 </button>
-                <div className="flex-1">
-                  <div className="flex items-end gap-1">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-end gap-0.5 sm:gap-1 overflow-hidden">
                     {Array.from({ length: 40 }).map((_, i) => (
                       <motion.span
                         key={i}
@@ -1179,7 +1179,7 @@ function TripletSection() {
                           ease: "easeInOut",
                           delay: i * 0.03,
                         }}
-                        className="block w-1 rounded-full bg-gradient-to-t from-cyan-400 to-fuchsia-500"
+                        className="block w-1 flex-1 rounded-full bg-gradient-to-t from-cyan-400 to-fuchsia-500"
                         style={{ height: "40%" }}
                       />
                     ))}
@@ -1229,7 +1229,7 @@ const TESTIMONIALS = [
 
 function Testimonials() {
   return (
-    <section className="relative py-32">
+    <section className="relative py-20 sm:py-24 md:py-32">
       <SectionHeader eyebrow="Loved by early users" title="Words we didn't write." />
       <div className="mx-auto mt-16 grid max-w-6xl grid-cols-1 gap-4 px-4 md:grid-cols-2">
         {TESTIMONIALS.map((t, i) => (
@@ -1303,7 +1303,7 @@ const PLANS = [
 function Pricing() {
   const navigate = useNavigate();
   return (
-    <section id="pricing" className="relative py-32">
+    <section id="pricing" className="relative py-20 sm:py-24 md:py-32">
       <SectionHeader
         eyebrow="Pricing"
         title="Simple plans. Real value."
@@ -1394,7 +1394,7 @@ const FAQ = [
 function FaqSection() {
   const [open, setOpen] = useState<number | null>(0);
   return (
-    <section id="faq" className="relative py-32">
+    <section id="faq" className="relative py-20 sm:py-24 md:py-32">
       <SectionHeader eyebrow="FAQ" title="Questions, answered." />
       <div className="mx-auto mt-12 max-w-3xl space-y-3 px-4">
         {FAQ.map((item, i) => {
@@ -1446,10 +1446,10 @@ function FaqSection() {
 function CTA() {
   const navigate = useNavigate();
   return (
-    <section className="relative py-32">
+    <section className="relative py-20 sm:py-24 md:py-32">
       <div className="mx-auto max-w-4xl px-4">
         <Reveal>
-          <GlassCard className="relative overflow-hidden p-10 text-center md:p-16">
+            <GlassCard className="relative overflow-hidden p-6 text-center sm:p-10 md:p-16">
             <div
               aria-hidden
               className="absolute inset-0 opacity-70"
@@ -1459,7 +1459,7 @@ function CTA() {
               }}
             />
             <div className="relative">
-              <h2 className="text-balance text-4xl font-semibold tracking-tight text-white md:text-5xl">
+              <h2 className="text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl md:text-5xl">
                 Ready to talk in a
                 <br />
                 <span className="bg-gradient-to-r from-cyan-300 via-fuchsia-400 to-pink-400 bg-clip-text text-transparent">

@@ -28,16 +28,16 @@ const PremiumAuthShell: React.FC<Props> = ({ children, mode }) => {
   }, []);
 
   return (
-    <div className="relative min-h-screen w-full overflow-hidden bg-[#0b0d12] text-white">
+    <div className="relative min-h-[100dvh] w-full overflow-hidden bg-[#0b0d12] text-white">
       {/* Ambient background */}
       <div className="pointer-events-none absolute inset-0">
         <div
           ref={orbRef}
-          className="absolute -top-40 -left-40 h-[600px] w-[600px] rounded-full blur-3xl opacity-40 transition-transform duration-300 ease-out"
+          className="absolute -top-40 -left-40 h-[400px] w-[400px] sm:h-[600px] sm:w-[600px] rounded-full blur-3xl opacity-40 transition-transform duration-300 ease-out"
           style={{ background: "radial-gradient(circle at center, #5865F2 0%, transparent 60%)" }}
         />
         <div
-          className="absolute -bottom-56 -right-32 h-[700px] w-[700px] rounded-full blur-3xl opacity-30"
+          className="absolute -bottom-56 -right-32 h-[440px] w-[440px] sm:h-[700px] sm:w-[700px] rounded-full blur-3xl opacity-30"
           style={{ background: "radial-gradient(circle at center, #a855f7 0%, transparent 60%)" }}
         />
         <div
@@ -51,7 +51,7 @@ const PremiumAuthShell: React.FC<Props> = ({ children, mode }) => {
         />
       </div>
 
-      <div className="relative z-10 grid min-h-screen grid-cols-1 lg:grid-cols-2">
+      <div className="relative z-10 grid min-h-[100dvh] grid-cols-1 lg:grid-cols-2">
         {/* Left: brand + highlights */}
         <div className="hidden lg:flex flex-col justify-between p-12 xl:p-16">
           <motion.a
@@ -121,7 +121,7 @@ const PremiumAuthShell: React.FC<Props> = ({ children, mode }) => {
         </div>
 
         {/* Right: form */}
-        <div className="flex items-center justify-center p-6 sm:p-10">
+        <div className="flex items-center justify-center p-4 sm:p-10 py-8">
           <motion.div
             initial={{ opacity: 0, y: 16, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -130,7 +130,7 @@ const PremiumAuthShell: React.FC<Props> = ({ children, mode }) => {
           >
             {/* Card glow */}
             <div className="absolute -inset-px rounded-3xl bg-gradient-to-b from-white/20 via-white/5 to-transparent opacity-60 blur-sm" />
-            <div className="relative rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-2xl p-8 sm:p-10 shadow-[0_20px_80px_-20px_rgba(0,0,0,0.6)]">
+            <div className="relative rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-2xl p-6 sm:p-10 shadow-[0_20px_80px_-20px_rgba(0,0,0,0.6)]">
               {children}
             </div>
           </motion.div>

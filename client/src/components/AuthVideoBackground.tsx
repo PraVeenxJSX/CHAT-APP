@@ -2,7 +2,7 @@ import React from "react";
 
 const AuthVideoBackground = ({ children }: { children: React.ReactNode }) => {
   return (
-    <div className="relative min-h-screen w-full overflow-hidden bg-cyber-bg">
+    <div className="relative min-h-[100dvh] w-full overflow-hidden bg-cyber-bg">
       {/* Video */}
       <video
         autoPlay
@@ -21,7 +21,7 @@ const AuthVideoBackground = ({ children }: { children: React.ReactNode }) => {
       <div className="absolute inset-0 cyber-scanline pointer-events-none" />
 
       {/* Content */}
-      <div className="relative z-10 min-h-screen flex items-center justify-center">
+      <div className="relative z-10 min-h-[100dvh] flex items-center justify-center">
         {children}
       </div>
     </div>

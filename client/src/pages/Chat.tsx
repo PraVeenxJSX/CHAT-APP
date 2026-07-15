@@ -453,19 +453,19 @@ const [showSearch, setShowSearch] = useState(false);
   }, [users, user]);
 
   return (
-    <div className="h-dvh w-screen max-w-full flex bg-[#07080c] text-white relative overflow-hidden">
+    <div className="h-dvh w-full max-w-full flex bg-[#07080c] text-white relative overflow-hidden">
       {/* Ambient aurora */}
       <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
         <div
-          className="absolute -top-56 -left-40 h-[560px] w-[560px] rounded-full blur-3xl opacity-30 animate-[pulse_9s_ease-in-out_infinite]"
+          className="absolute -top-56 -left-40 h-[360px] w-[360px] sm:h-[560px] sm:w-[560px] rounded-full blur-3xl opacity-30 animate-[pulse_9s_ease-in-out_infinite]"
           style={{ background: "radial-gradient(circle at center, #5865F2 0%, transparent 60%)" }}
         />
         <div
-          className="absolute top-1/3 -right-40 h-[640px] w-[640px] rounded-full blur-3xl opacity-25 animate-[pulse_11s_ease-in-out_infinite]"
+          className="absolute top-1/3 -right-40 h-[420px] w-[420px] sm:h-[640px] sm:w-[640px] rounded-full blur-3xl opacity-25 animate-[pulse_11s_ease-in-out_infinite]"
           style={{ background: "radial-gradient(circle at center, #a855f7 0%, transparent 60%)" }}
         />
         <div
-          className="absolute -bottom-60 left-1/3 h-[520px] w-[520px] rounded-full blur-3xl opacity-20"
+          className="absolute -bottom-60 left-1/3 h-[340px] w-[340px] sm:h-[520px] sm:w-[520px] rounded-full blur-3xl opacity-20"
           style={{ background: "radial-gradient(circle at center, #06b6d4 0%, transparent 60%)" }}
         />
         <div
@@ -530,7 +530,7 @@ const [showSearch, setShowSearch] = useState(false);
 
       {/* Sidebar */}
       <div
-        className={`fixed z-30 top-0 left-0 h-full w-72 transition-transform duration-300 ease-out md:relative md:translate-x-0 md:w-80 md:h-auto ${
+        className={`fixed z-30 top-0 left-0 h-full w-[85vw] max-w-[18rem] sm:w-80 transition-transform duration-300 ease-out md:relative md:translate-x-0 md:w-80 md:h-auto ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         }`}
       >
